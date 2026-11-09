@@ -92,6 +92,7 @@ class BaseMarketTests(unittest.IsolatedAsyncioTestCase):
         self.changes_payload = []
         self.detail_payloads = {}
         self.platform_list = []
+        self.ds_pairs = []
         self.gt_tokens = {ADDR_A: gt_token(ADDR_A)}
         self.gt_pools = []
         self.forced_pool_statuses = []
@@ -177,7 +178,21 @@ class BaseMarketTests(unittest.IsolatedAsyncioTestCase):
             return self.handle_coingecko(request)
         if host == "geckoterminal.test":
             return self.handle_geckoterminal(request)
+        if host == "api.dexscreener.com":
+            return self.handle_dexscreener(request)
         raise AssertionError(f"Unexpected host {host}")
+
+    def handle_dexscreener(self, request):
+        path = request.url.path
+        if not path.startswith("/tokens/v1/base/"):
+            raise AssertionError(f"Unexpected DexScreener path {path}")
+        requested = set(path.rsplit("/", 1)[1].split(","))
+        data = [
+            pair
+            for pair in self.ds_pairs
+            if str(pair["baseToken"]["address"]).lower() in requested
+        ]
+        return self.respond(data)
 
     def respond(self, payload, status=200):
         return httpx.Response(
@@ -458,6 +473,26 @@ class BaseMarketTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.path_requests("coingecko.test", "/api/v3/coins/base-coin")), 1)
         self.assertEqual(self.address_cache["base-coin"], ADDR_A)
 
+    async def test_dexscreener_fallback_supplies_metrics_when_geckoterminal_fails(self):
+        self.fail_hosts.add("geckoterminal.test")
+        self.ds_pairs = [
+            {
+                "baseToken": {"address": ADDR_A, "name": "Dex Token", "symbol": "dex"},
+                "priceUsd": "3.5",
+                "fdv": "9000000",
+                "volume": {"h24": 1234.5},
+                "liquidity": {"usd": 50000},
+            }
+        ]
+        response = await self.client.get("/market/base-tokens")
+        self.assertEqual(response.status_code, 200)
+        token = response.json()["tokens"][0]
+        self.assertEqual(token["id"], "base-coin")
+        self.assertEqual(token["symbol"], "DEX")
+        self.assertEqual(token["price"], 3.5)
+        self.assertEqual(token["market_cap"], 9000000.0)
+        self.assertEqual(token["volume_24h"], 1234.5)
+
     async def test_rate_limited_refresh_serves_previous_snapshot(self):
         first = await self.client.get("/market/base-tokens")
         self.assertEqual(first.status_code, 200)
@@ -486,16 +521,14 @@ class BaseMarketTests(unittest.IsolatedAsyncioTestCase):
         pools = self.path_requests("geckoterminal.test", "/api/v2/networks/base/pools")
         self.assertEqual(len(pools), 2)
 
-    async def test_persistent_pool_rate_limit_is_safe_502(self):
+    async def test_persistent_pool_rate_limit_falls_back_to_candidate_ranking(self):
         self.gt_pools = [gt_pool(ADDR_A, WETH, 100)]
         self.forced_pool_statuses = [429, 429]
         response = await self.client.get("/market/base-tokens?sort_by=volume_24h")
-        self.assertEqual(response.status_code, 502)
-        self.assertEqual(
-            response.json(), {"detail": "Unable to fetch Base token market data"}
-        )
-        self.assertNotIn("rate limited", response.text)
-        self.assertNotIn("volume_24h", routes_market._base_tokens_cache)
+        # The pool endpoint is exhausted, but the candidate pool can still
+        # produce a volume ranking, so the tab stays populated.
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([t["id"] for t in response.json()["tokens"]], ["base-coin"])
         pools = self.path_requests("geckoterminal.test", "/api/v2/networks/base/pools")
         self.assertEqual(len(pools), 2)
 
@@ -603,8 +636,10 @@ class BaseMarketTests(unittest.IsolatedAsyncioTestCase):
         self.fail_hosts.add("coingecko.test")
         await self.assert_failure_is_not_cached("market_cap")
         self.fail_hosts.clear()
-        # Metrics/pool fetch (GeckoTerminal) fails for both rankings.
+        # Metrics/pool fetch fails for both rankings; DexScreener is empty too,
+        # so there is no provider left to fall back to.
         self.fail_hosts.add("geckoterminal.test")
+        self.fail_hosts.add("api.dexscreener.com")
         await self.assert_failure_is_not_cached("market_cap")
         await self.assert_failure_is_not_cached("volume_24h")
         self.fail_hosts.clear()
@@ -664,7 +699,10 @@ class BaseMarketTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(pools=pools):
                 self.gt_pools = pools
+                # Without candidates there is no fallback ranking either.
+                self.candidates = []
                 await self.assert_failure_is_not_cached("volume_24h")
+        self.candidates = [cg_coin()]
 
     async def test_subsequent_requests_use_separate_cache_without_refresh_bypass(self):
         original_cache = [object()]

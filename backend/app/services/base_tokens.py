@@ -13,6 +13,7 @@ from .coingecko import (
     fetch_coin_base_address,
     fetch_price_changes,
 )
+from .dexscreener import fetch_token_metrics as fetch_dexscreener_metrics
 from .geckoterminal import (
     fetch_base_token_metrics,
     fetch_base_volume_ranked_addresses,
@@ -165,10 +166,23 @@ async def _resolve_base_addresses(coin_ids: List[str]) -> Dict[str, str]:
     return resolved
 
 
+async def _fetch_metrics(addresses: List[str]) -> Dict[str, object]:
+    """Base-chain metrics, falling back to DexScreener when GeckoTerminal fails.
+
+    GeckoTerminal sits behind Cloudflare and challenges unattended clients, so
+    a second keyless provider keeps the ranking available.
+    """
+    try:
+        return await fetch_base_token_metrics(addresses)
+    except (httpx.HTTPError, ValueError) as exc:
+        print(f"[BaseTokens] GeckoTerminal unavailable ({exc}); using DexScreener")
+        return await fetch_dexscreener_metrics(addresses)
+
+
 async def _fetch_cap_ranked() -> List[BaseToken]:
     candidates = await fetch_base_ecosystem_candidates(limit=CANDIDATE_POOL_SIZE)
     id_to_address = await _resolve_base_addresses([c.id for c in candidates])
-    metrics = await fetch_base_token_metrics(list(id_to_address.values()))
+    metrics = await _fetch_metrics(list(id_to_address.values()))
 
     # Rank by Base FDV (Base total supply x Base DEX price). CoinGecko's own
     # market_cap is a global all-chain figure and must not be used here.
@@ -207,9 +221,52 @@ async def _fetch_cap_ranked() -> List[BaseToken]:
     return tokens
 
 
+async def _fetch_volume_ranked_from_candidates() -> List[BaseToken]:
+    """Volume ranking without GeckoTerminal pools: rank tracked Base coins."""
+    candidates = await fetch_base_ecosystem_candidates(limit=CANDIDATE_POOL_SIZE)
+    id_to_address = await _resolve_base_addresses([c.id for c in candidates])
+    metrics = await _fetch_metrics(list(id_to_address.values()))
+
+    entries = []
+    for candidate in candidates:
+        address = id_to_address.get(candidate.id)
+        metric = metrics.get(address) if address else None
+        if metric is None or metric.volume_24h is None or metric.volume_24h <= 0:
+            continue
+        entries.append((candidate, metric))
+    entries.sort(key=lambda entry: entry[1].volume_24h, reverse=True)
+
+    tokens: List[BaseToken] = []
+    seen_addresses = set()
+    for candidate, metric in entries:
+        if metric.address in seen_addresses:
+            continue
+        seen_addresses.add(metric.address)
+        tokens.append(
+            BaseToken(
+                id=candidate.id,
+                name=metric.name,
+                symbol=metric.symbol.upper(),
+                price=metric.price,
+                change_24h=candidate.change_24h,
+                volume_24h=metric.volume_24h,
+                market_cap=metric.fdv,
+            )
+        )
+        if len(tokens) == RANKING_SIZE:
+            break
+    if not tokens:
+        raise ValueError("No usable Base token metrics")
+    return tokens
+
+
 async def _fetch_volume_ranked() -> List[BaseToken]:
-    addresses, volumes = await fetch_base_volume_ranked_addresses()
-    metrics = await fetch_base_token_metrics(addresses[:RANKING_SIZE])
+    try:
+        addresses, volumes = await fetch_base_volume_ranked_addresses()
+    except (httpx.HTTPError, ValueError) as exc:
+        print(f"[BaseTokens] GeckoTerminal pools unavailable ({exc}); ranking by candidates")
+        return await _fetch_volume_ranked_from_candidates()
+    metrics = await _fetch_metrics(addresses[:RANKING_SIZE])
 
     tokens: List[BaseToken] = []
     for address in addresses:

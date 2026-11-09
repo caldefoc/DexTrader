@@ -14,6 +14,13 @@ POOL_PAGES = 10  # 20 pools per page -> top 200 Base pools by 24h volume
 POOL_PAGE_DELAY = 6.0
 RATE_LIMIT_RETRY_DELAY = 20.0
 
+# Cloudflare in front of GeckoTerminal rejects clients that look like bare
+# automation, so identify the demo and always request JSON.
+GECKOTERMINAL_HEADERS = {
+    "Accept": "application/json",
+    "User-Agent": "DexTraderDemo/1.0 (+https://dextrader.caldefoc.com)",
+}
+
 # Quote assets on Base DEX pools. Pool volume is attributed to the non-quote
 # side only, so these tokens do not absorb the volume of every pool they quote.
 QUOTE_TOKEN_ADDRESSES = {
@@ -116,7 +123,7 @@ async def _fetch_tokens(network: str, addresses: List[str]) -> List[dict]:
         raise ValueError("Unsupported GeckoTerminal network")
     unique = list(dict.fromkeys(address.lower() for address in addresses))
     tokens: List[dict] = []
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, headers=GECKOTERMINAL_HEADERS) as client:
         for start in range(0, len(unique), MAX_ADDRESSES_PER_REQUEST):
             batch = unique[start : start + MAX_ADDRESSES_PER_REQUEST]
             payload = await _get_json(
@@ -193,7 +200,7 @@ async def fetch_base_volume_ranked_addresses() -> Tuple[List[str], Dict[str, flo
     ranked addresses and the attributed volume per address.
     """
     volumes: Dict[str, float] = {}
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, headers=GECKOTERMINAL_HEADERS) as client:
         for page in range(1, POOL_PAGES + 1):
             if page > 1:
                 await asyncio.sleep(POOL_PAGE_DELAY)
