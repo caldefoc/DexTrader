@@ -1,5 +1,6 @@
 import Link from "next/link";
 import WalletConnectButton from "../components/WalletConnectButton";
+import { DEMO_MODE } from "../constants/config";
 
 export default function HomePage() {
   return (
@@ -11,6 +12,12 @@ export default function HomePage() {
         <p className="text-gray-300 text-lg">
           Monitor CoinMarketCap markets, analyze signals with agents, and trade on Uniswap with a non-custodial wallet.
         </p>
+        {DEMO_MODE && (
+          <p className="text-amber-300/80 text-sm mt-3">
+            This deployment is a demo: the agents run on live prices and fill a
+            simulated $1,000 portfolio. No wallet is involved.
+          </p>
+        )}
       </div>
       <div className="flex flex-col sm:flex-row gap-4">
         <Link
@@ -26,8 +33,7 @@ export default function HomePage() {
           View Portfolio
         </Link>
       </div>
-      <WalletConnectButton />
+      {!DEMO_MODE && <WalletConnectButton />}
     </div>
   );
 }
-
