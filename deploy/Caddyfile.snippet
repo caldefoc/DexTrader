@@ -1,0 +1,31 @@
+# Add to /etc/caddy/Caddyfile, then: sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+#
+# The frontend calls the backend at https://dextrader.caldefoc.com/api, so the
+# /api prefix is stripped before the request reaches FastAPI.
+
+dextrader.caldefoc.com {
+	encode zstd gzip
+
+	handle /api/* {
+		uri strip_prefix /api
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/dextrader-access.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}

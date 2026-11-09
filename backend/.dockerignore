@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+venv/
+.env
+trades.json
+agent_state.json
+price_history.json
+demo_portfolio.json
+agents.log
+*.backup
+test_*.py
