@@ -157,6 +157,8 @@ Not tested: the agent proposal → execution path end to end in a browser, the s
 
 Implemented in `services/indicators.py`, `services/market_history.py`, `services/guardrails.py` and the three agents. Numbers are defaults in code, not settings.
 
+Stablecoins (`USDC`, `USDT`, `DAI`) are treated as cash everywhere: excluded from analysis, never given position state, and rejected by the demo portfolio, so a depeg cannot produce a "sell USDC" stop-loss.
+
 - **Indicators** — Wilder RSI(14), VWAP from rolling 24 h volume deltas, and a 5-minute volume ratio against a 1-hour baseline (spike ≥ 2×). Samples come from the agent loop's own snapshots; a new sample is taken at most once per 55 s and history is kept for 48 h. During warm-up an indicator returns `None` and the signal is either skipped or downgraded — never filled with a neutral constant.
 - **Buy gates** — 24 h change ≤ −2% to be eligible; RSI ≤ 35; price at or below VWAP; volume spike required unless the dip is ≤ −5%; after a stop-loss, re-entry waits 1 hour, needs a price 1.5% below the exit, and needs a volume spike. Four buy steps of 25 / 35 / 50 / 60 % of the per-step target.
 - **Exits** — stop ladder at −1.5 / −3 / −5% selling 25 / 75 / 100% of the position; trailing stop armed at +3% peak gain with a 1.5% trail; scale-out ladder selling 20 / 50 / 90% at +1.5 / +3 / +6%; the remainder is capped at +20%.

@@ -25,6 +25,19 @@ class AnalysisAgentTests(unittest.TestCase):
                                change_24h=change, volume_24h=1_000_000)]
         )
 
+    def test_stablecoin_pairs_are_skipped(self):
+        snapshot = MarketSnapshot(
+            pairs=[TradingPair(base_symbol="USDC", quote_symbol="USD", price=0.97,
+                               change_24h=-3.0, volume_24h=1_000_000)]
+        )
+        recommendations = self.agent.analyze(
+            snapshot,
+            {"USDC": {"avg_entry": 1.0, "buy_step": 1}},
+            {"USDC": 1000.0},
+        )
+        # A depegged stablecoin is cash, not a stop-loss candidate.
+        self.assertEqual(recommendations, [])
+
     def test_stop_loss_exits_the_full_position(self):
         recommendations = self.agent.analyze(
             self.snapshot(price=9.0, change=-10.0),

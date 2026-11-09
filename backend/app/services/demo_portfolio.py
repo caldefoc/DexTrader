@@ -16,6 +16,7 @@ import uuid
 from typing import Dict, List, Optional
 
 from .state_store import JsonStateStore
+from .policy import STABLECOINS
 
 
 STARTING_CASH = 1000.0
@@ -40,8 +41,14 @@ class DemoPortfolio:
                     quantity, average = float(row or 0.0), 0.0
             except (TypeError, ValueError):
                 continue
+            symbol = symbol.upper()
+            if symbol in STABLECOINS:
+                # Stablecoins are cash.  Fold any legacy entry back into it so
+                # the book never reports the same dollars twice.
+                self.cash += quantity
+                continue
             if quantity > DUST:
-                self.positions[symbol.upper()] = {"qty": quantity, "avg_entry": average}
+                self.positions[symbol] = {"qty": quantity, "avg_entry": average}
 
     # ------------------------------------------------------------------ reads
     def holdings(self) -> Dict[str, float]:
@@ -49,7 +56,7 @@ class DemoPortfolio:
         result = {
             symbol: round(position["qty"], 8)
             for symbol, position in self.positions.items()
-            if position["qty"] > DUST
+            if position["qty"] > DUST and symbol not in STABLECOINS
         }
         if self.cash > 0.01:
             result["USDC"] = round(self.cash, 2)
@@ -102,6 +109,10 @@ class DemoPortfolio:
         action = str(getattr(proposal, "action", "")).lower()
         token = str(getattr(proposal, "token", "")).upper()
         if price <= 0 or quantity <= 0 or not token or action not in ("buy", "sell"):
+            return None
+        if token in STABLECOINS:
+            # Cash is not a tradable position: buying or "stopping out" of it
+            # would corrupt the book.
             return None
 
         if action == "buy":

@@ -4,6 +4,7 @@ from typing import Dict, List, Optional
 from ..models.agents import AnalysisRecommendation
 from ..models.market import MarketSnapshot
 from ..services.market_history import MarketHistory
+from ..services.policy import STABLECOINS
 
 
 class AnalysisAgent:
@@ -86,6 +87,10 @@ class AnalysisAgent:
             token = pair.base_symbol.upper()
             price = pair.price
             if price <= 0:
+                continue
+            # Cash equivalents are not positions.  A depeg must not turn into a
+            # "sell USDC" stop-loss (it cannot be filled) or a "buy USDC" dip.
+            if token in STABLECOINS:
                 continue
 
             state = self._state(position_states, token)

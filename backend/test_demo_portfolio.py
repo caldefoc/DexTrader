@@ -96,6 +96,28 @@ class DemoPortfolioTests(unittest.TestCase):
         self.assertEqual(summary["positions"], [])
         self.assertEqual(summary["fills"], 0)
 
+    def test_stablecoin_fills_are_rejected(self):
+        self.assertIsNone(self.portfolio.apply_fill(FakeProposal("USDC", "buy", 10.0, 1.0)))
+        self.assertIsNone(self.portfolio.apply_fill(FakeProposal("USDC", "sell", 10.0, 1.0)))
+        self.assertEqual(self.portfolio.fills, [])
+        self.assertEqual(self.portfolio.cash, STARTING_CASH)
+        self.assertEqual(self.portfolio.positions, {})
+
+    def test_legacy_stablecoin_position_is_folded_into_cash(self):
+        path = os.path.join(self.directory.name, "legacy.json")
+        store = JsonStateStore(path=path)
+        store.save({
+            "cash": 100.0,
+            "positions": {"USDC": {"qty": 50.0, "avg_entry": 1.0}},
+            "fills": [],
+        })
+        portfolio = DemoPortfolio(store=store)
+        self.assertEqual(portfolio.positions, {})
+        self.assertAlmostEqual(portfolio.cash, 150.0)
+        summary = portfolio.summary()
+        self.assertEqual([row["token"] for row in summary["positions"]], [])
+        self.assertAlmostEqual(summary["equity"], 150.0)
+
 
 if __name__ == "__main__":
     unittest.main()

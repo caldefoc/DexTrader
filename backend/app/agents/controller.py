@@ -79,6 +79,8 @@ class ControllerAgent:
             if not isinstance(stored, dict):
                 continue
             token = token.upper()
+            if token in STABLECOINS:
+                continue  # cash is not a position; drop stale entries
             state = self.position_states.setdefault(
                 token, {"avg_entry": 0.0, "buy_step": 0}
             )
@@ -134,7 +136,9 @@ class ControllerAgent:
                 except Exception:
                     continue
 
-                token = base
+                token = base.upper()
+                if token in STABLECOINS:
+                    continue  # a stablecoin leg is cash, not a position
                 state = self.position_states.get(token, {"avg_entry": 0.0, "buy_step": 0})
 
                 if trade.action == "buy":
@@ -190,6 +194,8 @@ class ControllerAgent:
                 buys[token] = buys.get(token, 0) + 1
 
         for token, position in self.demo_portfolio.positions.items():
+            if token.upper() in STABLECOINS:
+                continue
             state = self.position_states.setdefault(
                 token, {"avg_entry": 0.0, "buy_step": 0}
             )
@@ -524,6 +530,8 @@ class ControllerAgent:
                     market_prices = {p.base_symbol.upper(): p.price for p in filtered_pairs}
                     self.last_prices = market_prices
                     for token, amount in self.user_holdings.items():
+                        if token.upper() in STABLECOINS:
+                            continue  # cash, not a tradable position
                         if amount > 0:
                             state = self.position_states.get(
                                 token, {"avg_entry": 0.0, "buy_step": 0}
