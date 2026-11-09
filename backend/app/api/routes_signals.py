@@ -14,6 +14,10 @@ from ..agents.langchain_signals import generate_signals_with_langchain, generate
 router = APIRouter()
 
 
+# Both spellings are registered because the app sits behind a proxy that
+# strips the /api prefix: a 307 from "/signals" to "/signals/" would lose the
+# prefix and land on the frontend instead of the backend.
+@router.get("", response_model=List[Signal])
 @router.get("/", response_model=List[Signal])
 async def get_signals(limit: int = Query(50, ge=1, le=500)) -> List[Signal]:
     pairs = await get_cached_market_data()

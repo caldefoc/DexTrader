@@ -1,3 +1,4 @@
+import os
 import unittest
 from unittest.mock import patch
 
@@ -26,6 +27,24 @@ class BaseTokenSupportTests(unittest.IsolatedAsyncioTestCase):
         for symbol, coin_id in TOKEN_IDS.items():
             with self.subTest(symbol=symbol):
                 self.assertEqual(coingecko.COINGECKO_SYMBOL_ID_MAP.get(symbol), coin_id)
+
+    def test_base_url_uses_pro_endpoint_when_a_key_is_configured(self):
+        with patch.dict("os.environ", {}, clear=False):
+            os.environ.pop("CMC_BASE_URL", None)
+            self.assertEqual(
+                coinmarketcap._resolve_base_url("test-key"),
+                "https://pro-api.coinmarketcap.com",
+            )
+            self.assertEqual(
+                coinmarketcap._resolve_base_url(None),
+                "https://pro-api.coinmarketcap.com/trial-pro-api",
+            )
+
+    def test_base_url_override_wins_over_key(self):
+        with patch.dict("os.environ", {"CMC_BASE_URL": "https://cmc.test/"}):
+            self.assertEqual(
+                coinmarketcap._resolve_base_url("test-key"), "https://cmc.test"
+            )
 
     async def test_pricing_fallback_fetches_each_new_asset_by_id(self):
         requests = []

@@ -73,6 +73,12 @@ _base_tokens_lock = asyncio.Lock()
 BASE_TOKENS_CACHE_DURATION = 300
 
 
+def _is_rate_limited(exc: Exception) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code == 429
+    return "429" in str(exc)
+
+
 @router.get("/base-tokens", response_model=BaseTokenSnapshot)
 async def get_base_tokens(
     sort_by: Literal["market_cap", "volume_24h"] = "market_cap",
@@ -87,7 +93,13 @@ async def get_base_tokens(
         try:
             tokens = await fetch_base_tokens(sort_by=sort_by)
             snapshot = BaseTokenSnapshot(tokens=tokens)
-        except (httpx.HTTPError, ValueError):
+        except (httpx.HTTPError, ValueError) as exc:
+            # A refreshed ranking that is rate limited is better served from
+            # the previous successful snapshot than as an empty tab.
+            stale = _base_tokens_cache.get(sort_by)
+            if stale is not None and _is_rate_limited(exc):
+                print(f"[BaseTokens] Rate limited, serving cached {sort_by} ranking")
+                return stale
             raise HTTPException(
                 status_code=502, detail="Unable to fetch Base token market data"
             ) from None

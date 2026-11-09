@@ -1,4 +1,6 @@
+import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -6,6 +8,7 @@ import httpx
 
 from ..models.market import BaseToken
 from .coingecko import (
+    fetch_base_address_map,
     fetch_base_ecosystem_candidates,
     fetch_coin_base_address,
     fetch_price_changes,
@@ -14,9 +17,14 @@ from .geckoterminal import (
     fetch_base_token_metrics,
     fetch_base_volume_ranked_addresses,
 )
+from .state_store import state_path
 
 
-ADDRESS_CACHE_PATH = Path(__file__).resolve().parents[2] / "base_address_cache.json"
+# Both caches live in the state directory (a mounted volume in Docker) so a
+# container restart does not force a full re-resolution burst.
+ADDRESS_CACHE_PATH = Path(state_path("base_address_cache.json"))
+PLATFORM_MAP_PATH = Path(state_path("base_platform_map.json"))
+PLATFORM_MAP_TTL = 12 * 3600
 RANKING_SIZE = 50
 CANDIDATE_POOL_SIZE = 100
 
@@ -24,6 +32,12 @@ CANDIDATE_POOL_SIZE = 100
 # CoinGecko coin-detail call per unknown id, so results are cached on disk;
 # steady state needs no detail calls at all. None means "no Base address".
 _address_cache: Optional[Dict[str, Optional[str]]] = None
+
+# Whole-catalogue id -> Base address snapshot fetched in a single request.
+# Guarded by its own timestamp so it is refreshed once per TTL, not per request.
+_platform_map: Optional[Dict[str, Optional[str]]] = None
+_platform_map_timestamp: float = 0.0
+_platform_map_lock = asyncio.Lock()
 
 
 def _load_address_cache() -> Dict[str, Optional[str]]:
@@ -56,14 +70,93 @@ def _save_address_cache() -> None:
         pass  # The cache is best-effort; it must never fail a request.
 
 
+def _load_platform_map() -> Dict[str, Optional[str]]:
+    """Disk-backed platform snapshot; empty when missing, stale or unreadable."""
+    global _platform_map, _platform_map_timestamp
+    if _platform_map is not None:
+        return _platform_map
+    try:
+        data = json.loads(PLATFORM_MAP_PATH.read_text())
+        fetched_at = float(data.get("fetched_at", 0))
+        addresses = data.get("addresses")
+        if not isinstance(addresses, dict):
+            raise ValueError("missing addresses")
+        if time.time() - fetched_at > PLATFORM_MAP_TTL:
+            raise ValueError("stale platform map")
+        _platform_map = {
+            key: value
+            for key, value in addresses.items()
+            if isinstance(key, str) and (value is None or isinstance(value, str))
+        }
+        _platform_map_timestamp = fetched_at
+    except (OSError, ValueError, TypeError):
+        _platform_map = {}
+    return _platform_map
+
+
+def _save_platform_map(addresses: Dict[str, Optional[str]]) -> None:
+    try:
+        PLATFORM_MAP_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = PLATFORM_MAP_PATH.with_suffix(".tmp")
+        tmp_path.write_text(
+            json.dumps(
+                {"version": 1, "fetched_at": _platform_map_timestamp, "addresses": addresses}
+            )
+        )
+        tmp_path.replace(PLATFORM_MAP_PATH)
+    except OSError:
+        pass  # Best effort; the ranking must not fail because of a cache write.
+
+
+async def _get_platform_map() -> Dict[str, Optional[str]]:
+    """Fetch (at most once per TTL) the id -> Base address catalogue snapshot."""
+    global _platform_map, _platform_map_timestamp
+    cached = _load_platform_map()
+    if time.time() - _platform_map_timestamp <= PLATFORM_MAP_TTL:
+        return cached
+    async with _platform_map_lock:
+        if time.time() - _platform_map_timestamp <= PLATFORM_MAP_TTL:
+            return _platform_map or {}
+        try:
+            addresses = await fetch_base_address_map()
+        except (httpx.HTTPError, ValueError):
+            # The per-coin detail path below is still a valid fallback.  Back
+            # off for a full TTL so a provider outage cannot amplify into a
+            # retry storm against the same rate limit.
+            _platform_map_timestamp = time.time()
+            return cached
+        _platform_map = addresses
+        _platform_map_timestamp = time.time()
+        _save_platform_map(addresses)
+        return addresses
+
+
 async def _resolve_base_addresses(coin_ids: List[str]) -> Dict[str, str]:
     cache = _load_address_cache()
     resolved: Dict[str, str] = {}
+    unknown: List[str] = []
     for coin_id in coin_ids:
         if coin_id in cache:
             if cache[coin_id]:
                 resolved[coin_id] = cache[coin_id]
             continue
+        unknown.append(coin_id)
+
+    if unknown:
+        # Bulk lookup keeps steady-state resolution to a single CoinGecko call.
+        platforms = await _get_platform_map()
+        for coin_id in list(unknown):
+            if coin_id not in platforms:
+                continue
+            address = platforms[coin_id]
+            cache[coin_id] = address
+            if address:
+                resolved[coin_id] = address
+            unknown.remove(coin_id)
+        if unknown:
+            _save_address_cache()
+
+    for coin_id in unknown:
         address = await fetch_coin_base_address(coin_id)
         cache[coin_id] = address
         _save_address_cache()

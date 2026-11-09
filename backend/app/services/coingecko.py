@@ -1,3 +1,4 @@
+import asyncio
 from math import isfinite
 from typing import Dict, List, Optional
 
@@ -8,6 +9,11 @@ from ..models.market import TradingPair
 
 
 COINGECKO_BASE_URL = "https://api.coingecko.com/api/v3"
+
+# One polite retry when the public rate limit is hit.  Kept short so a request
+# behind a cache miss cannot hang the UI for long.
+RATE_LIMIT_RETRY_DELAY = 2.0
+MAX_RETRY_AFTER = 10.0
 
 # Map trading symbols to Coingecko coin IDs.
 # These IDs are stable and correspond to the /coins/markets endpoint.
@@ -146,6 +152,28 @@ def _headers() -> dict:
     return headers
 
 
+def _retry_delay(response: httpx.Response) -> float:
+    header = response.headers.get("Retry-After", "").strip()
+    try:
+        delay = float(header)
+    except ValueError:
+        delay = RATE_LIMIT_RETRY_DELAY
+    return max(0.0, min(delay, MAX_RETRY_AFTER))
+
+
+async def _get_json(
+    client: httpx.AsyncClient, path: str, params: Optional[dict] = None
+) -> object:
+    """GET a CoinGecko path, retrying once on 429 with Retry-After respect."""
+    url = f"{COINGECKO_BASE_URL}{path}"
+    response = await client.get(url, params=params, headers=_headers())
+    if response.status_code == 429:
+        await asyncio.sleep(_retry_delay(response))
+        response = await client.get(url, params=params, headers=_headers())
+    response.raise_for_status()
+    return response.json()
+
+
 class BaseEcosystemCandidate:
     def __init__(self, coin_id: str, name: str, symbol: str, change_24h: Optional[float]):
         self.id = coin_id
@@ -169,12 +197,8 @@ async def fetch_base_ecosystem_candidates(limit: int = 100) -> List[BaseEcosyste
         "page": 1,
         "sparkline": "false",
     }
-    async with httpx.AsyncClient(timeout=10) as client:
-        response = await client.get(
-            f"{COINGECKO_BASE_URL}/coins/markets", params=params, headers=_headers()
-        )
-        response.raise_for_status()
-        data = response.json()
+    async with httpx.AsyncClient(timeout=20) as client:
+        data = await _get_json(client, "/coins/markets", params)
 
     if not isinstance(data, list):
         raise ValueError("Invalid CoinGecko markets payload")
@@ -209,12 +233,8 @@ async def fetch_coin_base_address(coin_id: str) -> Optional[str]:
         "developer_data": "false",
         "sparkline": "false",
     }
-    async with httpx.AsyncClient(timeout=10) as client:
-        response = await client.get(
-            f"{COINGECKO_BASE_URL}/coins/{coin_id}", params=params, headers=_headers()
-        )
-        response.raise_for_status()
-        data = response.json()
+    async with httpx.AsyncClient(timeout=20) as client:
+        data = await _get_json(client, f"/coins/{coin_id}", params)
 
     if not isinstance(data, dict):
         raise ValueError("Invalid CoinGecko coin payload")
@@ -237,12 +257,8 @@ async def fetch_price_changes(coin_ids: List[str]) -> Dict[str, Optional[float]]
         "ids": ",".join(coin_ids),
         "sparkline": "false",
     }
-    async with httpx.AsyncClient(timeout=10) as client:
-        response = await client.get(
-            f"{COINGECKO_BASE_URL}/coins/markets", params=params, headers=_headers()
-        )
-        response.raise_for_status()
-        data = response.json()
+    async with httpx.AsyncClient(timeout=20) as client:
+        data = await _get_json(client, "/coins/markets", params)
 
     if not isinstance(data, list):
         raise ValueError("Invalid CoinGecko markets payload")
@@ -251,3 +267,36 @@ async def fetch_price_changes(coin_ids: List[str]) -> Dict[str, Optional[float]]
         if isinstance(item, dict) and isinstance(item.get("id"), str):
             changes[item["id"]] = _finite_number(item.get("price_change_percentage_24h"))
     return changes
+
+
+async def fetch_base_address_map() -> Dict[str, Optional[str]]:
+    """Map every CoinGecko coin id to its Base contract address in one call.
+
+    ``/coins/list?include_platform=true`` returns the full catalogue with
+    platform addresses, so resolving ~100 candidates costs a single request
+    instead of ~100 per-coin detail calls (which tripped the rate limit).
+    ``None`` marks a coin that exists but has no Base deployment.
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        data = await _get_json(client, "/coins/list", {"include_platform": "true"})
+
+    if not isinstance(data, list):
+        raise ValueError("Invalid CoinGecko coin list payload")
+
+    addresses: Dict[str, Optional[str]] = {}
+    for item in data:
+        if not isinstance(item, dict):
+            raise ValueError("Invalid CoinGecko coin entry")
+        coin_id = item.get("id")
+        if not isinstance(coin_id, str) or not coin_id:
+            continue
+        platforms = item.get("platforms")
+        address = platforms.get("base") if isinstance(platforms, dict) else None
+        addresses[coin_id] = (
+            address.lower()
+            if isinstance(address, str) and address.startswith("0x")
+            else None
+        )
+    if not addresses:
+        raise ValueError("No usable CoinGecko coin list")
+    return addresses

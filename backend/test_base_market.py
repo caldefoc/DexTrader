@@ -91,6 +91,7 @@ class BaseMarketTests(unittest.IsolatedAsyncioTestCase):
         self.candidates = [cg_coin()]
         self.changes_payload = []
         self.detail_payloads = {}
+        self.platform_list = []
         self.gt_tokens = {ADDR_A: gt_token(ADDR_A)}
         self.gt_pools = []
         self.forced_pool_statuses = []
@@ -128,6 +129,12 @@ class BaseMarketTests(unittest.IsolatedAsyncioTestCase):
         self.start_patch(
             patch.object(base_tokens, "ADDRESS_CACHE_PATH", self.address_cache_path)
         )
+        self.platform_map_path = Path(tmp.name) / "platform_map.json"
+        self.start_patch(
+            patch.object(base_tokens, "PLATFORM_MAP_PATH", self.platform_map_path)
+        )
+        self.start_patch(patch.object(base_tokens, "_platform_map", None))
+        self.start_patch(patch.object(base_tokens, "_platform_map_timestamp", 0.0))
         self.start_patch(patch.object(base_tokens, "_address_cache", {"base-coin": ADDR_A}))
         self.address_cache = base_tokens._address_cache
         # Replace only this route's clock, not asyncio's global monotonic clock.
@@ -185,6 +192,8 @@ class BaseMarketTests(unittest.IsolatedAsyncioTestCase):
             if "ids" in request.url.params:
                 return self.respond(self.changes_payload)
             return self.respond(self.candidates)
+        if path == "/api/v3/coins/list":
+            return self.respond(self.platform_list)
         if path.startswith("/api/v3/coins/"):
             coin_id = path.rsplit("/", 1)[1]
             payload = self.detail_payloads.get(coin_id, {"id": coin_id, "platforms": {}})
@@ -415,6 +424,56 @@ class BaseMarketTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             len(self.path_requests("coingecko.test", "/api/v3/coins/base-coin")), 1
         )
+
+    async def test_bulk_platform_map_resolves_candidates_in_one_call(self):
+        self.address_cache.clear()
+        self.platform_list = [
+            {"id": "base-coin", "symbol": "base", "name": "Base Coin",
+             "platforms": {"base": ADDR_A.replace("aa", "AA"), "ethereum": "0x" + "00" * 20}},
+        ]
+        response = await self.client.get("/market/base-tokens")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([t["id"] for t in response.json()["tokens"]], ["base-coin"])
+        self.assertEqual(len(self.path_requests("coingecko.test", "/api/v3/coins/list")), 1)
+        # No per-coin detail call is needed when the catalogue is available.
+        self.assertEqual(
+            len([r for r in self.host_requests("coingecko.test")
+                 if r.url.path.startswith("/api/v3/coins/")
+                 and r.url.path != "/api/v3/coins/markets"
+                 and r.url.path != "/api/v3/coins/list"]),
+            0,
+        )
+        self.assertEqual(self.address_cache["base-coin"], ADDR_A)
+        self.assertTrue(self.platform_map_path.exists())
+
+    async def test_platform_map_failure_falls_back_to_detail_calls(self):
+        self.address_cache.clear()
+        self.platform_list = {"error": "rate limited"}  # malformed catalogue
+        self.detail_payloads["base-coin"] = {
+            "id": "base-coin",
+            "platforms": {"base": ADDR_A},
+        }
+        response = await self.client.get("/market/base-tokens")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(self.path_requests("coingecko.test", "/api/v3/coins/base-coin")), 1)
+        self.assertEqual(self.address_cache["base-coin"], ADDR_A)
+
+    async def test_rate_limited_refresh_serves_previous_snapshot(self):
+        first = await self.client.get("/market/base-tokens")
+        self.assertEqual(first.status_code, 200)
+        snapshot = routes_market._base_tokens_cache["market_cap"]
+        self.clock += 300
+        request = httpx.Request("GET", "https://coingecko.test/api/v3/coins/markets")
+        rate_limited = httpx.HTTPStatusError(
+            "429 rate limited",
+            request=request,
+            response=httpx.Response(429, request=request),
+        )
+        with patch.object(routes_market, "fetch_base_tokens", side_effect=rate_limited):
+            second = await self.client.get("/market/base-tokens")
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.json(), first.json())
+        self.assertIs(routes_market._base_tokens_cache["market_cap"], snapshot)
 
     async def test_pool_rate_limit_is_retried_once(self):
         self.gt_pools = [gt_pool(ADDR_A, WETH, 100)]

@@ -1,3 +1,4 @@
+import os
 from typing import List, Optional
 
 import httpx
@@ -6,7 +7,21 @@ from ..core.config import COINMARKETCAP_API_KEY
 from ..models.market import TradingPair
 
 
-CMC_BASE_URL = "https://pro-api.coinmarketcap.com/trial-pro-api"
+# The keyless "trial" path only serves listings/latest and is aggressively
+# rate limited.  With an API key (free tier included) the regular endpoint is
+# available and raises the limits, so prefer it whenever a key is configured.
+CMC_PRO_BASE_URL = "https://pro-api.coinmarketcap.com"
+CMC_TRIAL_BASE_URL = f"{CMC_PRO_BASE_URL}/trial-pro-api"
+
+
+def _resolve_base_url(api_key: Optional[str]) -> str:
+    override = os.getenv("CMC_BASE_URL")
+    if override:
+        return override.rstrip("/")
+    return CMC_PRO_BASE_URL if api_key else CMC_TRIAL_BASE_URL
+
+
+CMC_BASE_URL = _resolve_base_url(COINMARKETCAP_API_KEY)
 
 # Tokens we explicitly want to track to ensure they appear in the UI
 # regardless of their market cap rank.

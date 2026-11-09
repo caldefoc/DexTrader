@@ -38,6 +38,7 @@ backend/nonce*.json
 backend/baseblock.json
 backend/tibbair_bal.json
 backend/base_address_cache.json
+backend/base_platform_map.json
 backend/*.backup
 backend/*.bak
 
