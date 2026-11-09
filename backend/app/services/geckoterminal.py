@@ -10,8 +10,9 @@ GECKOTERMINAL_BASE_URL = "https://api.geckoterminal.com/api/v2"
 
 MAX_ADDRESSES_PER_REQUEST = 30
 POOL_PAGES = 10  # 20 pools per page -> top 200 Base pools by 24h volume
-# The free tier throttles bursts hard; pace pool pagination and retry 429s.
-POOL_PAGE_DELAY = 6.0
+# The public API allows ~30 calls/min; one page per 2s stays well inside that
+# while keeping the ranking responsive.
+POOL_PAGE_DELAY = 2.0
 RATE_LIMIT_RETRY_DELAY = 20.0
 
 # Cloudflare in front of GeckoTerminal rejects clients that look like bare

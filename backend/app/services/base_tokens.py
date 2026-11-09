@@ -28,6 +28,9 @@ PLATFORM_MAP_PATH = Path(state_path("base_platform_map.json"))
 PLATFORM_MAP_TTL = 12 * 3600
 RANKING_SIZE = 50
 CANDIDATE_POOL_SIZE = 100
+# A slow pool walk must not keep the tab loading for minutes; beyond this the
+# candidate ranking (one CoinGecko call + one metrics call) takes over.
+VOLUME_POOL_BUDGET = 25.0
 
 # Persistent CoinGecko-id -> Base contract address map. Resolution costs one
 # CoinGecko coin-detail call per unknown id, so results are cached on disk;
@@ -262,7 +265,12 @@ async def _fetch_volume_ranked_from_candidates() -> List[BaseToken]:
 
 async def _fetch_volume_ranked() -> List[BaseToken]:
     try:
-        addresses, volumes = await fetch_base_volume_ranked_addresses()
+        addresses, volumes = await asyncio.wait_for(
+            fetch_base_volume_ranked_addresses(), timeout=VOLUME_POOL_BUDGET
+        )
+    except asyncio.TimeoutError:
+        print("[BaseTokens] GeckoTerminal pools too slow; ranking by candidates")
+        return await _fetch_volume_ranked_from_candidates()
     except (httpx.HTTPError, ValueError) as exc:
         print(f"[BaseTokens] GeckoTerminal pools unavailable ({exc}); ranking by candidates")
         return await _fetch_volume_ranked_from_candidates()

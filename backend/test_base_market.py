@@ -532,6 +532,13 @@ class BaseMarketTests(unittest.IsolatedAsyncioTestCase):
         pools = self.path_requests("geckoterminal.test", "/api/v2/networks/base/pools")
         self.assertEqual(len(pools), 2)
 
+    async def test_slow_pool_walk_falls_back_within_budget(self):
+        self.gt_pools = [gt_pool(ADDR_A, WETH, 100)]
+        with patch.object(base_tokens, "VOLUME_POOL_BUDGET", 0.0):
+            response = await self.client.get("/market/base-tokens?sort_by=volume_24h")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([t["id"] for t in response.json()["tokens"]], ["base-coin"])
+
     async def test_volume_ranking_attributes_volume_to_non_quote_side(self):
         self.gt_pools = [
             gt_pool(ADDR_A, WETH, 100),
