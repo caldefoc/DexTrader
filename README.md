@@ -6,7 +6,7 @@ It was built as a personal experiment in semi-autonomous trading: a small pipeli
 
 The strategy rules from the original design brief (`agent_guidelines.txt`) are implemented: RSI(14), VWAP deviation, a 5-minute volume-spike filter, a scale-out ladder, stop-loss and trailing stops, a daily drawdown circuit breaker and a kill switch. What remains thin is the infrastructure around them — JSON files instead of a database, global spot pricing rather than the DEX pool the swap executes against, and a localhost-only security posture. [Remaining gaps](#remaining-gaps) lists them honestly.
 
-This is a **reference release**: the code runs and is tested, but it is not a product and it is not financial advice. It talks to Base mainnet by default and moves real funds when you approve a swap — use a testnet or small amounts until you trust it.
+This is a **reference release**: the code runs and is tested, but it is not a product and it is not financial advice. It talks to Base mainnet by default and moves real funds when you approve a swap — use a testnet or small amounts until you trust it. A hosted demo with a simulated portfolio and no wallet runs at <https://dextrader.caldefoc.com> (see [Demo mode](#demo-mode)).
 
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue) ![Next.js](https://img.shields.io/badge/Next.js-14.2.3-black) ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 
