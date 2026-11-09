@@ -9,6 +9,7 @@ from .api.routes_portfolio import router as portfolio_router
 from .api.routes_agents import router as agents_router
 from .api.routes_signals import router as signals_router
 from .api.routes_news import router as news_router, fetch_all_feeds
+from .core.config import DEMO_MODE
 
 app = FastAPI(title="DexTrader Backend")
 
@@ -55,4 +56,4 @@ async def startup_event():
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok"}
+    return {"status": "ok", "demo": DEMO_MODE}

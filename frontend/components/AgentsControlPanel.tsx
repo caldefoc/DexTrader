@@ -6,7 +6,7 @@ import { SEPOLIA_TOKENS, MAINNET_TOKENS, BASE_TOKENS, BASE_TOKEN_DECIMALS, ARBIT
 import { useSettings } from "../context/SettingsContext";
 import TradePreviewModal from "./TradePreviewModal";
 import { AUTO_TRADE_TARGETS } from "../lib/autoTradeExecutor";
-import { BACKEND_URL } from "../constants/config";
+import { BACKEND_URL, DEMO_MODE } from "../constants/config";
 
 type AgentStatus = {
   running: boolean;
@@ -63,12 +63,18 @@ export default function AgentsControlPanel() {
   
   const [previewOpen, setPreviewOpen] = useState(false);
   const [selectedProposal, setSelectedProposal] = useState<TradeProposal | null>(null);
+  const [simulatingId, setSimulatingId] = useState<string | null>(null);
   
   const pollTimer = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch holdings to send to agents
   useEffect(() => {
       async function loadHoldings() {
+          if (DEMO_MODE) {
+              // The demo portfolio lives on the backend; the browser has none.
+              setHoldingsMap({});
+              return;
+          }
           if (!address || typeof window === "undefined" || !(window as any).ethereum) {
               setHoldingsMap({});
               return;
@@ -199,6 +205,26 @@ export default function AgentsControlPanel() {
   };
 
   const executeProposal = async (proposal: TradeProposal) => {
+    if (DEMO_MODE) {
+        setSimulatingId(proposal.id);
+        try {
+            const res = await fetch(`${BACKEND_URL}/agents/proposals/${proposal.id}/complete`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({})
+            });
+            if (!res.ok) {
+                const detail = await res.text().catch(() => "");
+                console.error("Demo fill rejected", res.status, detail);
+            }
+            await fetchStatus();
+        } catch (e) {
+            console.error("Failed to simulate proposal", e);
+        } finally {
+            setSimulatingId(null);
+        }
+        return;
+    }
     if (!address) {
         alert("Please connect wallet first");
         return;
@@ -492,9 +518,12 @@ export default function AgentsControlPanel() {
                             <div className="flex gap-2">
                                 <button 
                                     onClick={() => executeProposal(p)}
-                                    className="w-[60%] py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded font-medium"
+                                    disabled={DEMO_MODE && simulatingId === p.id}
+                                    className="w-[60%] py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded font-medium disabled:opacity-50"
                                 >
-                                    Review & Sign
+                                    {DEMO_MODE
+                                        ? (simulatingId === p.id ? "Filling…" : "Simulate")
+                                        : "Review & Sign"}
                                 </button>
                                 <button
                                     onClick={() => rejectProposal(p.id)}

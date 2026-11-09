@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useWallet } from "../context/WalletContext";
 import { useSettings } from "../context/SettingsContext";
 import { AUTO_TRADE_TARGETS, executeAutoSwap, isAutoTradeEligible } from "../lib/autoTradeExecutor";
-import { BACKEND_URL } from "../constants/config";
+import { BACKEND_URL, DEMO_MODE } from "../constants/config";
 
 interface TradeProposal {
   id: string;
@@ -91,6 +91,14 @@ export function useAutoTrading() {
     console.log(`[AutoTrading]   autoTrading: ${autoTrading}`);
     console.log(`[AutoTrading]   address: ${address || "not connected"}`);
     console.log(`[AutoTrading]   network: ${network}`);
+
+    if (DEMO_MODE) {
+      // Hard stop: a demo deployment must never reach a wallet, even if one is
+      // injected and auto-trading was left enabled in localStorage.
+      console.log("[AutoTrading] DISABLED - demo mode");
+      isRunningRef.current = false;
+      return;
+    }
 
     if (!autoTrading) {
       console.log("[AutoTrading] DISABLED - toggle is off");

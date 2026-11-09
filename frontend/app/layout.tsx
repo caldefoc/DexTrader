@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { ReactNode } from "react";
 import Navbar from "../components/Navbar";
+import DemoBanner from "../components/DemoBanner";
 import { WalletProvider } from "../context/WalletContext";
 import { SignalsProvider } from "../context/SignalsContext";
 import { SettingsProvider } from "../context/SettingsContext";
@@ -22,6 +23,7 @@ export default function RootLayout(props: { children: ReactNode }) {
               <SignalsProvider>
                 <AutoTradingProvider>
                   <div className="min-h-screen flex flex-col">
+                    <DemoBanner />
                     <Navbar />
                     <main className="flex-1 container mx-auto px-4 py-6">
                       {props.children}

@@ -45,6 +45,13 @@ class AgentRouteTests(unittest.TestCase):
         self.client.post("/agents/resume")
         self.fake.resume.assert_called_once()
 
+    def test_holdings_are_ignored_in_demo_mode(self):
+        self.fake.demo = True
+        self.fake.demo_portfolio.holdings.return_value = {"USDC": 1000.0}
+        response = self.client.post("/agents/holdings", json={"ETH": 5.0})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ignored", "holdings": {"USDC": 1000.0}})
+
 
 if __name__ == "__main__":
     unittest.main()

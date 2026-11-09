@@ -29,6 +29,7 @@ backend/trades.json.*
 backend/deleted_corrupted_trades.json
 backend/agent_state.json
 backend/price_history.json
+backend/demo_portfolio.json
 backend/agents.log
 backend/agents.log.*
 backend/uvicorn.*

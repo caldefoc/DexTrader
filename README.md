@@ -77,11 +77,26 @@ Secrets live in a root-level `.env`. It exists in the working copy and is gitign
 | `BASE_RPC_URL` | `backend/app/services/gas.py:12` | JSON-RPC endpoint used to read `eth_gasPrice` for the risk layer. Defaults to `https://mainnet.base.org`. |
 | `DEXTRADER_STATE_DIR` | `backend/app/services/state_store.py:16` | Directory for `agent_state.json` and `price_history.json`. Defaults to `backend/`. |
 | `NEXT_PUBLIC_BACKEND_URL` | `frontend/constants/config.ts:1` | Backend origin, reused by every page. Defaults to `http://127.0.0.1:8000`. |
+| `DEMO_MODE` | `backend/app/core/config.py:16` | Runs the backend as a public demo: virtual $1,000 portfolio, real market data, simulated fills, `POST /portfolio/trade` refused with 403. |
+| `NEXT_PUBLIC_DEMO_MODE` | `frontend/constants/config.ts:8` | Demo build: banner, no wallet button, "Simulate" instead of "Review & Sign", portfolio page reads the virtual portfolio. Build-time — requires a rebuild. |
 | `LANGCHAIN_API_KEY` | nothing | Present in `.env`, not referenced by any Python file. LangChain tracing is not configured. |
 
 `.env.example` mirrors the functional list with empty values; copy it to `.env`.
 
 In-app settings are browser-only (`localStorage` keys prefixed `dexTrader_`): display currency (USD/EUR, rate pulled from `api.exchangerate-api.com`), network (`sepolia` / `mainnet` / `base` / `arbitrum`, default `base`), signals polling interval, market refresh interval, agent cache duration (60 s ⇄ 3600 s, posted to `POST /agents/config/cache-duration`), auto-trading on/off and its interval (default 300 s). Two are cosmetic: `marketRefreshInterval` is stored and rendered but nothing schedules a refresh from it, and `pollingInterval` only drives the `/signals` poll.
+
+## Demo mode
+
+The deployment at <https://dextrader.caldefoc.com> runs with `DEMO_MODE=1` and a frontend built with `NEXT_PUBLIC_DEMO_MODE=1`. In that mode:
+
+- The agent loop runs for real: live prices, real indicators, real proposals, real guardrails.
+- The portfolio starts at $1,000 of simulated USDC (`services/demo_portfolio.py`). Executing a proposal ("Simulate") fills it immediately at the proposal price and updates cash, position size and average entry. The fill is recorded with a `demo-` hash in `demo_portfolio.json`; `trades.json` is never touched.
+- `POST /portfolio/trade` returns 403, so nothing can inject a "real" trade into the demo ledger. `POST /portfolio/holdings` and `/agents/holdings` are ignored — the virtual portfolio is the only source of balances.
+- Auto-trading is hard-disabled in the browser, even if a wallet extension is present and the toggle was left on. The wallet button is replaced by a "Demo mode" badge.
+- `GET /portfolio/demo` returns the virtual summary, `POST /portfolio/demo/reset` restores $1,000 and clears positions. The banner offers a reset button.
+- Fills ignore slippage, fees and price impact; they are bookkeeping, not a backtest.
+
+Backend and frontend flag must agree. `NEXT_PUBLIC_DEMO_MODE` is baked in at build time, so changing it requires `npm run build` again.
 
 ## API surface
 
@@ -90,7 +105,7 @@ All routes are unauthenticated. CORS defaults to the two localhost origins and i
 | Prefix | Routes |
 |---|---|
 | `/market` | `GET /`, `/gainers-losers`, `/base-tokens`, `/token-volumes` |
-| `/portfolio` | `POST /holdings`, `POST /trade`, `GET /trades`, `/trades/export`, `/trades/debug`, `POST /trades/reload`, `GET /` (stub, always empty) |
+| `/portfolio` | `POST /holdings`, `POST /trade`, `GET /trades`, `/trades/export`, `/trades/debug`, `POST /trades/reload`, `GET /` (stub, always empty), `GET /demo`, `POST /demo/reset` (last two only in demo mode) |
 | `/agents` | `POST /start`, `/stop`, `/halt`, `/resume`, `/holdings`, `/proposals/{id}/complete`, `/proposals/{id}/reject`, `/report`, `/config/cache-duration`; `GET /status`, `/state`, `/proposals`, `/logs` |
 | `/signals` | `GET /` |
 | `/news` | `GET /feeds` |
@@ -107,18 +122,19 @@ backend/
     core/config.py          .env loading; the four API keys
     api/                    routes_market, routes_portfolio, routes_agents, routes_signals, routes_news
     agents/                 controller (loop), analysis, risk, execution, audit, polling, langchain_signals
-    services/               indicators, market_history, guardrails, gas, policy, state_store,
+    services/               indicators, market_history, guardrails, gas, policy, state_store, demo_portfolio,
                             coinmarketcap, coingecko, geckoterminal, base_tokens, portfolio, reports, strategy
     models/                 Pydantic models: market, portfolio, agents, signals
   trades.json               runtime ledger (gitignored)
   agent_state.json          proposals + strategy/guardrail state (gitignored)
   price_history.json        rolling indicator samples, 48 h (gitignored)
+  demo_portfolio.json       virtual demo cash/positions/fills (gitignored)
   agents.log                rotating audit log, 5 MB × 3 (gitignored)
   base_address_cache.json   runtime CoinGecko-id → Base contract cache (gitignored)
   test_*.py                 unit tests
 frontend/
   app/                      dashboard, portfolio, agents, reports, news, settings pages
-  components/               MarketTable, PortfolioTable, TradePreviewModal, AgentsControlPanel, …
+  components/               MarketTable, PortfolioTable, TradePreviewModal, AgentsControlPanel, DemoBanner, DemoPortfolio, …
   context/                  Wallet, Settings, MarketData, Signals providers
   hooks/useAutoTrading.ts   proposal → swap loop
   lib/autoTradeExecutor.ts  Uniswap V3 quoting + execution on Base
@@ -131,7 +147,7 @@ agent_guidelines.txt        the original design brief
 
 CI (`.github/workflows/ci.yml`) runs the backend unit tests, the frontend policy tests, `tsc --noEmit` and `next build` on every push, and fails if runtime data is ever tracked.
 
-- **Backend unit tests** — 98 tests across `test_base_market.py`, `test_token_volumes.py`, `test_auto_trade_policy.py`, `test_base_token_support.py`, `test_indicators.py`, `test_market_history.py`, `test_analysis_agent.py`, `test_risk_agent.py`, `test_execution_agent.py`, `test_guardrails.py` and `test_agent_routes.py`. Plain `unittest`; all upstream HTTP is mocked. They import `app.*`, so run from `backend/`: `python -m unittest discover -p "test_*.py"`.
+- **Backend unit tests** — 116 tests across `test_base_market.py`, `test_token_volumes.py`, `test_auto_trade_policy.py`, `test_base_token_support.py`, `test_indicators.py`, `test_market_history.py`, `test_analysis_agent.py`, `test_risk_agent.py`, `test_execution_agent.py`, `test_guardrails.py`, `test_agent_routes.py`, `test_demo_portfolio.py` and `test_demo_routes.py`. Plain `unittest`; all upstream HTTP is mocked. They import `app.*`, so run from `backend/`: `python -m unittest discover -p "test_*.py"`.
 - **Frontend policy tests** — 18 tests in `scripts/test_auto_trade_policy.cjs` and `scripts/test_base_token_support.cjs`. `node:test`, but they transpile the real `.ts` sources in memory with `require("../frontend/node_modules/typescript")`, so `npm install` must have run. Run: `npm test` from `frontend/`, or `node --test scripts/test_auto_trade_policy.cjs`.
 - **Browser smoke test** — `scripts/test_portfolio_display.py`: Playwright driving installed Chrome headless against `http://127.0.0.1:3000` (override with `PORTFOLIO_TEST_URL`), intercepting all network calls and injecting a fake `window.ethereum`. Playwright is **not** in `requirements.txt`. A dev server must be running.
 
@@ -161,6 +177,7 @@ Honest inventory of what is still thin, hardcoded, or a deliberate simplificatio
 - **Market cache is long for a trading UI.** The dashboard's market cache is 3,600 s by default (configurable); the agent loop uses 60 s, so proposals stay fresh even when the table does not.
 - **Repository hygiene.** `backend/trades.json`, `agents.log`, `agent_state.json`, `price_history.json`, the `*.backup` copies and the raw JSON-RPC dumps are gitignored and must stay that way; CI fails if any is tracked. `.qoder/repowiki/` is excluded until it is regenerated against the current code.
 - **Dependency notes.** `requirements.txt` is pinned to the versions the tests were run against, and lists no test dependencies (`pytest` is not used; Playwright is not listed). `zustand` is a declared frontend dependency and imported nowhere.
+- **The demo is bookkeeping, not a simulator.** Simulated fills execute instantly at the proposal price with no slippage, fees, gas or partial fills, so demo P&L is optimistic by construction. It also shares the pricing-source caveat above.
 - **Docs drift.** `.qoder/repowiki/` contains a generated English wiki for this repo (architecture, API reference, token ecosystem). Useful for orientation, but generated at some earlier point; where it disagrees with the code, the code is right.
 
 ## Not covered here

@@ -21,6 +21,9 @@ class HaltRequest(BaseModel):
 async def update_holdings(holdings: Dict[str, float]):
     """Dynamically update user holdings in the controller."""
     controller.set_user_holdings(holdings)
+    if getattr(controller, "demo", False) is True and controller.demo_portfolio is not None:
+        # The demo owns its balances; report the ones actually in use.
+        return {"status": "ignored", "holdings": controller.demo_portfolio.holdings()}
     return {"status": "ok", "holdings": holdings}
 
 

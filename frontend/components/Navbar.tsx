@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import WalletConnectButton from "./WalletConnectButton";
+import { DEMO_MODE } from "../constants/config";
 
 const links = [
   { href: "/dashboard", label: "Dashboard" },
@@ -38,7 +39,13 @@ export default function Navbar() {
               </Link>
             ))}
           </div>
-          <WalletConnectButton />
+          {DEMO_MODE ? (
+            <span className="text-xs text-amber-300 border border-amber-500/40 rounded-full px-3 py-1">
+              Demo mode
+            </span>
+          ) : (
+            <WalletConnectButton />
+          )}
         </nav>
       </div>
     </header>

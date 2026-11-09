@@ -10,6 +10,8 @@ from .audit_agent import AuditAgent
 
 from ..models.agents import AgentStatus, TradeProposal
 from ..models.market import MarketSnapshot
+from ..core.config import DEMO_MODE
+from ..services.demo_portfolio import DemoPortfolio
 from ..services.gas import get_gas_price_gwei
 from ..services.guardrails import Guardrails
 from ..services.market_history import MarketHistory
@@ -49,6 +51,10 @@ class ControllerAgent:
         self.guardrails = Guardrails()
         self.analysis_agent.history = self.history
 
+        self.demo = DEMO_MODE
+        self.demo_portfolio = DemoPortfolio() if self.demo else None
+        self.last_prices: dict = {}
+
         self._last_proposal_times = {}
         self._applied_tx_hashes: set = set()
         self._counted_tx_hashes: set = set()
@@ -59,7 +65,10 @@ class ControllerAgent:
         self.injected_holdings = None
 
         self._stored_state = self.state_store.load()
-        self._reconstruct_state_from_trades()
+        if self.demo:
+            self._reconstruct_demo_state()
+        else:
+            self._reconstruct_state_from_trades()
         self._restore_agent_state()
 
     # ----------------------------------------------------------- persistence
@@ -168,6 +177,43 @@ class ControllerAgent:
         except Exception as exc:
             print(f"Failed to reconstruct state: {exc}")
 
+    # --------------------------------------------------------- demo portfolio
+    def _reconstruct_demo_state(self) -> None:
+        """Seed holdings, average entries and buy steps from demo fills."""
+        if self.demo_portfolio is None:
+            return
+        self.user_holdings = self.demo_portfolio.holdings()
+        buys: dict = {}
+        for fill in self.demo_portfolio.fills:
+            if fill.get("action") == "buy":
+                token = str(fill.get("token", "")).upper()
+                buys[token] = buys.get(token, 0) + 1
+
+        for token, position in self.demo_portfolio.positions.items():
+            state = self.position_states.setdefault(
+                token, {"avg_entry": 0.0, "buy_step": 0}
+            )
+            state["avg_entry"] = float(position.get("avg_entry") or 0.0)
+            state["buy_step"] = min(4, int(buys.get(token, 0)))
+            state.setdefault("peak_price", 0.0)
+            state.setdefault("tranches_sold", [])
+            state.setdefault("cumulative_sold", 0.0)
+            self.position_states[token] = state
+
+        self.simulated_positions = {
+            token: float(position.get("qty") or 0.0)
+            for token, position in self.demo_portfolio.positions.items()
+        }
+        self.audit_agent.log(
+            "Controller",
+            "Demo portfolio restored",
+            data={
+                "cash": round(self.demo_portfolio.cash, 2),
+                "positions": len(self.demo_portfolio.positions),
+                "fills": len(self.demo_portfolio.fills),
+            },
+        )
+
     # -------------------------------------------------------------- lifecycle
     async def start(self):
         if self.is_running:
@@ -214,6 +260,33 @@ class ControllerAgent:
         return self.guardrails.status(self._last_equity)
 
     # --------------------------------------------------------------- proposals
+    def _apply_demo_fill(self, proposal: TradeProposal) -> None:
+        """Fill a proposal against the virtual portfolio (demo mode only)."""
+        if self.demo_portfolio is None:
+            return
+        fill = self.demo_portfolio.apply_fill(proposal)
+        if not fill:
+            self.audit_agent.log(
+                "Execution",
+                f"Demo fill skipped for {proposal.token} (no cash or holdings)",
+                level="WARNING",
+            )
+            return
+        # Keep the proposal and the position state in step with the fill that
+        # actually happened (a buy can be clipped by the available cash).
+        proposal.amount = fill["quantity"]
+        proposal.notional_usd = fill["value_usd"]
+        self.audit_agent.log(
+            "Execution",
+            f"Demo fill: {fill['action'].upper()} {proposal.token} "
+            f"{fill['quantity']:.6f} @ {fill['price']}",
+            data=fill,
+        )
+        self._update_position_state(proposal)
+        self.guardrails.record_trade(proposal.token)
+        self.last_trade_times[proposal.token] = time.time()
+        self.user_holdings = self.demo_portfolio.holdings()
+
     def update_proposal_status(
         self,
         proposal_id: str,
@@ -223,8 +296,14 @@ class ControllerAgent:
         for proposal in self.proposals:
             if proposal.id != proposal_id:
                 continue
+            if status == "executed" and proposal.status == "executed":
+                break  # idempotent: a repeat call must not fill twice
             proposal.status = status
             if status == "executed":
+                if self.demo:
+                    self._apply_demo_fill(proposal)
+                    self._persist_state()
+                    break
                 self.audit_agent.log(
                     "Controller",
                     f"Proposal executed: {proposal.token}",
@@ -315,6 +394,10 @@ class ControllerAgent:
         self.position_states[token] = state
 
     def set_user_holdings(self, holdings: dict):
+        if self.demo:
+            # The demo owns its portfolio; a browser cannot inject balances.
+            self.user_holdings = self.demo_portfolio.holdings() if self.demo_portfolio else {}
+            return
         self.injected_holdings = holdings
         self.user_holdings = holdings
         self.audit_agent.log(
@@ -439,6 +522,7 @@ class ControllerAgent:
                     self.history.record(snapshot)
 
                     market_prices = {p.base_symbol.upper(): p.price for p in filtered_pairs}
+                    self.last_prices = market_prices
                     for token, amount in self.user_holdings.items():
                         if amount > 0:
                             state = self.position_states.get(
@@ -457,7 +541,9 @@ class ControllerAgent:
                     await asyncio.sleep(10)
                     continue
 
-                if self.injected_holdings:
+                if self.demo and self.demo_portfolio is not None:
+                    self.user_holdings = self.demo_portfolio.holdings()
+                elif self.injected_holdings:
                     self.user_holdings = self.injected_holdings
                 else:
                     self.user_holdings = get_user_holdings()
