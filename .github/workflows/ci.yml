@@ -18,7 +18,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      - run: python -m unittest -v test_base_market test_token_volumes test_auto_trade_policy test_base_token_support
+      - run: python -m unittest discover -p "test_*.py" -v
 
   frontend:
     runs-on: ubuntu-latest
