@@ -1,0 +1,133 @@
+
+Agent Guidelines
+================
+
+Use LangChain to create.  Have one main Controller/Orchestrator Agent controlling the others :
+
+ - Analysis Agent: Analysis only (RSI/VWAP/volume) → outputs recommendations
+ - Risk Agent: Validation only (position limits/gas/slippage) → approves/blocks
+ - Execution Agent: Trade proposal only → requires human MetaMask approval
+ - Audit Agent: Logging/monitoring → read-only, no execution
+
+
+Core Monitoring Rules
+
+Track these per token using real-time price feeds (e.g., via Chainlink oracles, CoinGecko API, or direct Uniswap subgraph queries):
+ - VWAP Entry Baseline: Log your manual buy price as a volume-weighted average price (VWAP) for each position.
+ - Price Deviation Thresholds: Alert on % moves from VWAP (e.g., +1%, +2%, +3%, -1%, -2%).
+ - Volume Spike Filter: Only trigger if 5-min volume > 2x 1-hour average (avoids fakeouts).
+ - RSI/Momentum Check: Buy/sell only if RSI (14-period) <30 for buys, >70 for sells.
+
+
+Aggressive Take-Profit Ladder
+
+Scale out on upmoves to lock profits incrementally, resetting VWAP for remaining position after each sell:
+ - +1–2%: Sell 20% (micro-profit, quick scalp).
+ - +3–5%: Sell 30% more (cumulative 50%).
+ - +6–10%: Sell 40–50% more (near full exit).
+ - Hold remainder for runners, but cap at +20% trailing stop.
+
+
+Strict Stop-Loss Rules
+
+Protect downside aggressively:
+ - -1.5%: Sell 25% (cut early losers).
+ - -3%: Sell 50%.
+ - -5%: Full exit.
+ - Always trail stops by 1–2% once +3% in profit.
+	
+
+Position Sizing & Frequency Caps
+
+ - Min Profit Filter: Skip sells if projected P&L < €0.10 (scales with position; avoids dust).
+ - Daily Trade Limit: Max 10–20 legs per token (prevents over-trading while browser-open).
+ - Re-Entry Rule: After sell, only buy back if price drops 1–2% below your new cash average and volume confirms reversal.
+ - Position cap: Never exceed 5–10% portfolio per token for aggression without blowup risk.
+
+
+Implementation Tips for Agent
+
+Encode as a Node.js/ethers.js script polling every 30–60s:
+
+ - Use Etherscan API or Alchemy for gas/price.
+ - Propose tx via wallet.populateTransaction({to: contractAddress, data: sellCalldata}).
+ - Pop browser notification with "Approve +2% SHIB sell: +€0.15 profit?" before signing.
+ - Log all actions to file for backtesting rule tweaks.
+
+
+Include these features :
+
+## **Slippage Integration**
+
+Slippage should be calculated in real-time and enforced as both a pre-trade estimate and post-trade verification:
+
+**1. Dynamic Slippage Tolerance**
+Set slippage limits as bot parameters (e.g., 0.3-0.5% for liquid pairs, higher for volatile assets). As one source notes, the bot should "stop execution if slippage exceeds 0.5%". For large orders, implement order splitting to minimize market impact.
+
+**2. Real-time Calculation**
+Before execution, query the DEX router for expected output amount versus quoted price. Calculate: `(Expected Output - Actual Output) / Expected Output`. Platforms like 1inch offer "real-time slippage projections and MEV risk estimates" that you can integrate via API.
+
+**3. Auto-Adjustment**
+For volatile pairs, implement auto-slippage logic that adjusts tolerance based on recent price volatility, similar to how PancakeSwap "automatically recommends a slippage tolerance based on current volatility".
+
+**4. MEV Protection**
+Include slippage checks that account for sandwich attacks. Set a deadline parameter on transactions and consider using private mempools or MEV-protected routing.
+
+
+## **Gas Integration**
+
+Gas management must be proactive and profit-aware:
+
+**1. Pre-Transaction Estimation**
+Always "estimate gas to check current fees" before executing. Use `eth_estimateGas` or equivalent RPC calls. For DEX swaps, factor in:
+- Base gas cost (e.g., 150k gas for Uniswap V3)
+- Contract complexity
+- Network congestion multipliers
+
+**2. Profitability Threshold**
+Integrate gas costs directly into your profit calculation. For arbitrage, ensure "gas cost is lower than expected profit". The bot should abort if: `Expected Profit < (Gas Price × Gas Limit × Token Price)`.
+
+**3. Gas Cap Controls**
+Implement "gas caps: prevent transactions when gas prices spike". Set a maximum gas price (e.g., 50 gwei on Ethereum) and pause trading when exceeded. For Layer 2 solutions, adjust caps accordingly.
+
+**4. Dynamic Optimization**
+The bot should "optimize parameters so it doesn't overspend". This includes:
+- Adjusting gas limit based on historical usage
+- Using EIP-1559 base fee calculations
+- Implementing retry logic with incremental gas price bumps
+- Simulating transactions "with the same inputs your final swap would use"
+
+
+## **Essential Control Mechanisms**
+
+Risk controls should operate as independent guardrails:
+
+### **Core Safety Controls**
+- **Position Sizing**: Risk 1-2% of capital per trade using volatility-based or Kelly Criterion sizing
+- **Stop-Losses & Trailing Stops**: Implement ATR-based or percentage stops that trigger automatically
+- **Exposure Limits**: Restrict allocation per asset/strategy (e.g., no more than 50% in one position)
+
+### **Circuit Breakers**
+- **Daily Drawdown Limit**: "Pause trading after N consecutive losses" or when daily loss exceeds X%
+- **Volatility Halts**: Disable strategies if market volatility spikes beyond thresholds
+- **Automated Kill Switch**: "Build in mechanisms that halt trading automatically when critical thresholds are breached". This is non-negotiable - manual intervention is too slow.
+
+### **Monitoring & Validation**
+- **Pre-Execution Simulation**: Always simulate trades before live execution. If "simulation shows low likelihood of success or insufficient liquidity, the bot cancels the action"
+- **Real-Time P&L Tracking**: Monitor open positions and portfolio metrics continuously
+- **Performance Logging**: Log every action including "transaction logs, gas usage, slippage outcomes, per-flow profits" for post-trade analysis
+
+### **Portfolio Management Layer**
+Maintain a separate module for "portfolio tracking" that updates after each trade and computes risk metrics like VaR. This feeds back into the decision engine to prevent over-concentration.
+
+
+
+## **Implementation Workflow**
+
+1. **Strategy Layer** generates trading signals
+2. **Risk Layer** validates against limits (position size, exposure, drawdown)
+3. **Execution Layer** estimates gas and slippage, then simulates
+4. **If all checks pass**: Execute with parameterised slippage tolerance and gas limit
+5. **If any check fails**: Reject trade and log reason
+6. **Post-Trade**: Update portfolio, log actual slippage/gas, feed results to learning module
+

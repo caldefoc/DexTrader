@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.next/
+next-env.d.ts
+tsconfig.tsbuildinfo
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env~
+
+# Runtime state and personal data (never commit)
+backend/trades.json
+backend/trades.json.*
+backend/deleted_corrupted_trades.json
+backend/agents.log
+backend/agents.log.*
+backend/uvicorn.*
+backend/acct*.json
+backend/nonce*.json
+backend/baseblock.json
+backend/tibbair_bal.json
+backend/base_address_cache.json
+backend/*.backup
+backend/*.bak
+
+# Generated repository wiki (regenerate before publishing)
+.qoder/
+
+# Demo / deployment secrets
+*.pem
+*.key
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+.trae/
+
+# Editor leftovers
+*.backup
+*.temp
