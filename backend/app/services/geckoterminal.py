@@ -13,7 +13,7 @@ POOL_PAGES = 10  # 20 pools per page -> top 200 Base pools by 24h volume
 # The public API allows ~30 calls/min; one page per 2s stays well inside that
 # while keeping the ranking responsive.
 POOL_PAGE_DELAY = 2.0
-RATE_LIMIT_RETRY_DELAY = 20.0
+RATE_LIMIT_RETRY_DELAY = 3.0
 
 # Cloudflare in front of GeckoTerminal rejects clients that look like bare
 # automation, so identify the demo and always request JSON.

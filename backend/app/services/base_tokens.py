@@ -31,6 +31,7 @@ CANDIDATE_POOL_SIZE = 100
 # A slow pool walk must not keep the tab loading for minutes; beyond this the
 # candidate ranking (one CoinGecko call + one metrics call) takes over.
 VOLUME_POOL_BUDGET = 25.0
+METRICS_BUDGET = 8.0
 
 # Persistent CoinGecko-id -> Base contract address map. Resolution costs one
 # CoinGecko coin-detail call per unknown id, so results are cached on disk;
@@ -173,11 +174,14 @@ async def _fetch_metrics(addresses: List[str]) -> Dict[str, object]:
     """Base-chain metrics, falling back to DexScreener when GeckoTerminal fails.
 
     GeckoTerminal sits behind Cloudflare and challenges unattended clients, so
-    a second keyless provider keeps the ranking available.
+    a second keyless provider keeps the ranking available.  Its retry budget is
+    bounded too, otherwise a rate-limited page would stall the whole tab.
     """
     try:
-        return await fetch_base_token_metrics(addresses)
-    except (httpx.HTTPError, ValueError) as exc:
+        return await asyncio.wait_for(
+            fetch_base_token_metrics(addresses), timeout=METRICS_BUDGET
+        )
+    except (asyncio.TimeoutError, httpx.HTTPError, ValueError) as exc:
         print(f"[BaseTokens] GeckoTerminal unavailable ({exc}); using DexScreener")
         return await fetch_dexscreener_metrics(addresses)
 
