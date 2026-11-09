@@ -62,3 +62,5 @@ Thumbs.db
 # Editor leftovers
 *.backup
 *.temp
+# local scratch
+_*
