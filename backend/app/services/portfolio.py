@@ -29,15 +29,24 @@ def save_trades(trades: List[TradeExecution]):
     global EXECUTED_TRADES
     EXECUTED_TRADES = trades
     try:
-        with open(DATA_FILE, "w") as f:
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump([t.dict() for t in trades], f, indent=2)
     except Exception as e:
         print(f"Error saving trades to {DATA_FILE}: {e}")
 
-def add_trade(trade: TradeExecution):
+def add_trade(trade: TradeExecution) -> bool:
+    """Append a trade unless its tx hash is already recorded.
+
+    Returns ``True`` when the trade was new.  The browser posts the same
+    execution to ``/portfolio/trade`` and the proposal-completion endpoint, so
+    the ledger must be idempotent per transaction.
+    """
     global EXECUTED_TRADES
+    if trade.tx_hash and any(t.tx_hash == trade.tx_hash for t in EXECUTED_TRADES):
+        return False
     EXECUTED_TRADES.append(trade)
     save_trades(EXECUTED_TRADES)
+    return True
 
 def get_all_trades() -> List[TradeExecution]:
     return EXECUTED_TRADES

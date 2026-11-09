@@ -30,6 +30,7 @@ class TradeExecution(BaseModel):
     price: float = 0.0
     token_amount: float = 0.0  # Quantity of the pair's base token (bought/sold)
     network_fee: float = 0.0   # Gas fee in USD
+    price_usd: float = 0.0     # USD per base token at execution (for reporting)
     status: str = "completed"  # completed, failed, pending
     timestamp: int
 

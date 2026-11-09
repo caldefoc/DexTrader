@@ -28,12 +28,20 @@ async def get_portfolio(address: str = Query(...)) -> PortfolioSnapshot:
 
 @router.post("/trade", response_model=TradeExecution)
 async def record_trade(trade: TradeExecution):
-    portfolio.add_trade(trade)
-    # Update controller position state to enable sell proposals based on profit rules
-    try:
-        controller.update_position_from_trade(trade.pair, trade.action, trade.token_amount or 0.0, trade.price or 0.0)
-    except Exception:
-        pass
+    added = portfolio.add_trade(trade)
+    # Update controller state exactly once per transaction.  The same tx can
+    # arrive here and through /agents/proposals/{id}/complete.
+    if added:
+        try:
+            controller.update_position_from_trade(
+                trade.pair,
+                trade.action,
+                trade.token_amount or 0.0,
+                trade.price or 0.0,
+                tx_hash=trade.tx_hash,
+            )
+        except Exception:
+            pass
     return trade
 
 
@@ -63,9 +71,9 @@ async def get_trades(
     return trades[-limit:]
 
 @router.get("/trades/export")
-async def export_trades():
+async def export_trades(eth_price: float = Query(3000.0, gt=0)):
     trades = portfolio.get_all_trades()
-    csv_content = generate_csv_report(trades)
+    csv_content = generate_csv_report(trades, eth_price=eth_price)
     return StreamingResponse(
         io.StringIO(csv_content),
         media_type="text/csv",

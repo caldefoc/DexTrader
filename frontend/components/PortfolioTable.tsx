@@ -25,9 +25,6 @@ const CHAIN_NETWORKS: Partial<Record<number, Network>> = {
 const NETWORK_TOKENS = { mainnet: MAINNET_TOKENS, base: BASE_TOKENS, arbitrum: ARBITRUM_TOKENS, sepolia: SEPOLIA_TOKENS };
 const NETWORK_LABELS = { mainnet: "Ethereum Mainnet", base: "Base", arbitrum: "Arbitrum One", sepolia: "Sepolia Testnet" };
 
-const backendUrl =
-  process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
-
 export default function PortfolioTable() {
   const { address, chainId } = useWallet();
   const { format, currency, network, setNetwork } = useSettings();
@@ -275,7 +272,7 @@ export default function PortfolioTable() {
       // Agents use the app network; do not send another chain's balances.
       if (walletNetwork !== network) return;
       try {
-        await fetch(`${backendUrl}/portfolio/holdings`, {
+        await fetch(`${BACKEND_URL}/portfolio/holdings`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(rawHoldings)

@@ -1,7 +1,9 @@
 import asyncio
 import importlib.util
+import os
 from pathlib import Path
 import sys
+import tempfile
 from types import ModuleType
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
@@ -17,6 +19,9 @@ OTHER_DEFAULTS = {
 
 
 def isolated_controller_module():
+    # Every controller instance gets its own state directory so proposals and
+    # guardrails from one test cannot leak into the next.
+    os.environ["DEXTRADER_STATE_DIR"] = tempfile.mkdtemp(prefix="dextrader-test-")
     # Replace audit and trade reconstruction dependencies BEFORE the module's
     # global controller is constructed; never open live audit/trade files.
     replacements = {}
@@ -24,6 +29,10 @@ def isolated_controller_module():
         "app.agents.audit_agent": {"AuditAgent": Mock},
         "app.services.portfolio": {"load_trades": Mock(return_value=[]), "get_user_holdings": Mock(return_value={})},
         "app.services.coinmarketcap": {"fetch_market_pairs": AsyncMock()},
+        "app.services.gas": {
+            "get_gas_price_gwei": AsyncMock(return_value=0.01),
+            "estimate_gas_usd": lambda gwei, limit, eth: gwei * 1e-9 * limit * eth,
+        },
         "app.agents.polling_agent": {"poll_once": AsyncMock()},
     }.items():
         module = ModuleType(name)

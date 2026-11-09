@@ -13,6 +13,7 @@ class TradingPair(BaseModel):
 
 class MarketSnapshot(BaseModel):
     pairs: List[TradingPair]
+    timestamp: Optional[float] = None
 
 
 class GainersLosers(BaseModel):

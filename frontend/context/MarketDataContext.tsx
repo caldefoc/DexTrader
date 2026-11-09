@@ -1,5 +1,6 @@
 "use client";
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { BACKEND_URL } from "../constants/config";
 
 type TradingPair = {
   base_symbol: string;
@@ -19,8 +20,6 @@ interface MarketDataContextType {
 }
 
 const MarketDataContext = createContext<MarketDataContextType | undefined>(undefined);
-
-const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
 
 // LocalStorage keys
 const MARKET_DATA_KEY = "dexTrader_marketData";
@@ -70,7 +69,7 @@ export function MarketDataProvider({ children }: { children: React.ReactNode }) 
     
     try {
       // First check if backend is ready
-      const healthCheck = await fetch(`${backendUrl}/health`, { 
+      const healthCheck = await fetch(`${BACKEND_URL}/health`, { 
         method: 'GET',
         // Short timeout for health check
         signal: AbortSignal.timeout(3000)
@@ -81,7 +80,7 @@ export function MarketDataProvider({ children }: { children: React.ReactNode }) 
       }
       
       // Backend is ready, fetch market data
-      const response = await fetch(`${backendUrl}/market/?limit=500`);
+      const response = await fetch(`${BACKEND_URL}/market/?limit=500`);
       if (!response.ok) {
         throw new Error(`Failed to fetch market data: ${response.status}`);
       }

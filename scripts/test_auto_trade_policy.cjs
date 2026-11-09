@@ -137,6 +137,7 @@ async function pollHook(proposals, settings = {}, address = "test-wallet") {
       useEffect: (fn) => { cleanup = fn(); },
     },
     "../context/WalletContext": { useWallet: () => ({ address }) },
+    "../constants/config": { BACKEND_URL: "http://test-backend" },
     "../context/SettingsContext": {
       useSettings: () => ({ autoTrading: true, network: "base", autoTradingInterval: 60, ...settings }),
     },

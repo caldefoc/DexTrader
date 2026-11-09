@@ -6,14 +6,20 @@ import { SEPOLIA_TOKENS, MAINNET_TOKENS, BASE_TOKENS, BASE_TOKEN_DECIMALS, ARBIT
 import { useSettings } from "../context/SettingsContext";
 import TradePreviewModal from "./TradePreviewModal";
 import { AUTO_TRADE_TARGETS } from "../lib/autoTradeExecutor";
-
-const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
+import { BACKEND_URL } from "../constants/config";
 
 type AgentStatus = {
   running: boolean;
   current_step: string | null;
   last_run: number | null;
   monitored_tokens?: string[];
+  halted?: boolean;
+  halt_reason?: string | null;
+  equity?: number | null;
+  day_start_equity?: number | null;
+  drawdown_pct?: number | null;
+  trades_today?: number;
+  max_daily_trades?: number;
 };
 
 type AuditLog = {
@@ -36,6 +42,10 @@ type TradeProposal = {
   status: "pending" | "approved" | "rejected" | "executed";
   timestamp: number;
   pct_change?: number;
+  auto_tradeable?: boolean;
+  notional_usd?: number;
+  exit_kind?: string | null;
+  sell_fraction?: number | null;
 };
 
 export default function AgentsControlPanel() {
@@ -109,7 +119,7 @@ export default function AgentsControlPanel() {
           
           try {
               console.log("Syncing holdings to agents:", holdingsMap);
-              await fetch(`${backendUrl}/agents/holdings`, {
+              await fetch(`${BACKEND_URL}/agents/holdings`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify(holdingsMap)
@@ -123,7 +133,7 @@ export default function AgentsControlPanel() {
 
   const fetchStatus = async () => {
     try {
-      const res = await fetch(`${backendUrl}/agents/status`);
+      const res = await fetch(`${BACKEND_URL}/agents/status`);
       if (res.ok) {
         const s = await res.json();
         setStatus(s);
@@ -133,10 +143,10 @@ export default function AgentsControlPanel() {
         }
       }
       
-      const logsRes = await fetch(`${backendUrl}/agents/logs`);
+      const logsRes = await fetch(`${BACKEND_URL}/agents/logs`);
       if (logsRes.ok) setLogs(await logsRes.json());
       
-      const propRes = await fetch(`${backendUrl}/agents/proposals`);
+      const propRes = await fetch(`${BACKEND_URL}/agents/proposals`);
       if (propRes.ok) {
           const fetchedProposals = await propRes.json();
           setProposals(fetchedProposals);
@@ -168,13 +178,13 @@ export default function AgentsControlPanel() {
          console.log("Starting agents with holdings:", holdingsMap);
          
          body = { 
-             interval_seconds: 900, // 15 minutes
+             interval_seconds: 60, // 1 minute samples for RSI/VWAP warm-up
              monitored_tokens: tokensInput.split(",").map(t => t.trim()).filter(t => t.length > 0),
              user_holdings: holdingsMap
          };
       }
       
-      await fetch(`${backendUrl}/agents/${endpoint}`, {
+      await fetch(`${BACKEND_URL}/agents/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
@@ -197,10 +207,24 @@ export default function AgentsControlPanel() {
     setPreviewOpen(true);
   };
 
+  const toggleHalt = async () => {
+    try {
+      const endpoint = status?.halted ? "resume" : "halt";
+      await fetch(`${BACKEND_URL}/agents/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "Kill switch from dashboard" }),
+      });
+      await fetchStatus();
+    } catch (e) {
+      console.error("Failed to toggle kill switch", e);
+    }
+  };
+
   const handleTradeSuccess = async (txHash?: string) => {
       if (selectedProposal) {
           try {
-              await fetch(`${backendUrl}/agents/proposals/${selectedProposal.id}/complete`, {
+              await fetch(`${BACKEND_URL}/agents/proposals/${selectedProposal.id}/complete`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ tx_hash: txHash })
@@ -218,7 +242,7 @@ export default function AgentsControlPanel() {
 
   const rejectProposal = async (proposalId: string) => {
       try {
-          await fetch(`${backendUrl}/agents/proposals/${proposalId}/reject`, {
+          await fetch(`${BACKEND_URL}/agents/proposals/${proposalId}/reject`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({})
@@ -285,6 +309,38 @@ export default function AgentsControlPanel() {
                     {status?.last_run ? new Date(status.last_run * 1000).toLocaleTimeString() : "Never"}
                 </p>
              </div>
+
+             <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="bg-slate-950/60 border border-slate-800 rounded p-2">
+                    <span className="text-gray-500 uppercase block">Equity</span>
+                    <span className="font-mono text-gray-200">
+                        {status?.equity != null ? `$${status.equity.toFixed(2)}` : "—"}
+                    </span>
+                </div>
+                <div className="bg-slate-950/60 border border-slate-800 rounded p-2">
+                    <span className="text-gray-500 uppercase block">Day P&L</span>
+                    <span className={`font-mono ${
+                        (status?.drawdown_pct ?? 0) < 0 ? "text-red-400" : "text-emerald-400"
+                    }`}>
+                        {status?.drawdown_pct != null
+                            ? `${(status.drawdown_pct * 100).toFixed(2)}%`
+                            : "—"}
+                    </span>
+                </div>
+                <div className="bg-slate-950/60 border border-slate-800 rounded p-2 col-span-2">
+                    <span className="text-gray-500 uppercase block">Trades today</span>
+                    <span className="font-mono text-gray-200">
+                        {status?.trades_today ?? 0} / {status?.max_daily_trades ?? 20}
+                    </span>
+                </div>
+             </div>
+
+             {status?.halted && (
+                <div className="rounded border border-red-500/40 bg-red-500/10 p-2 text-xs text-red-300">
+                    <span className="font-bold block">Trading halted</span>
+                    {status.halt_reason}
+                </div>
+             )}
           
 
             <div className="mt-6">
@@ -313,6 +369,18 @@ export default function AgentsControlPanel() {
             }`}
           >
             {loading || status === null ? "Processing..." : status.running ? "Stop Agents" : "Start Agents"}
+          </button>
+
+          <button
+            onClick={toggleHalt}
+            disabled={status === null}
+            className={`w-full mt-2 py-2 rounded-lg text-sm font-medium border transition-colors shrink-0 ${
+              status?.halted
+                ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/20"
+                : "bg-orange-500/10 text-orange-300 border-orange-500/40 hover:bg-orange-500/20"
+            }`}
+          >
+            {status?.halted ? "Resume Trading" : "Kill Switch (Halt)"}
           </button>
         </div>
       </div>
@@ -387,6 +455,11 @@ export default function AgentsControlPanel() {
                                 <span className={`font-bold ${p.action === "buy" ? "text-emerald-400" : "text-red-400"}`}>
                                     {p.action.toUpperCase()} {p.token}
                                 </span>
+                                {p.auto_tradeable === false && (
+                                    <span className="text-[9px] uppercase tracking-wide text-yellow-500 border border-yellow-700/50 rounded px-1 py-0.5">
+                                        manual only
+                                    </span>
+                                )}
                                 <span className="text-xs text-gray-500">{new Date(p.timestamp * 1000).toLocaleTimeString()}</span>
                             </div>
                             {isWrongNetwork && (
@@ -443,6 +516,7 @@ export default function AgentsControlPanel() {
         onClose={() => setPreviewOpen(false)}
         signal={tradeSignal}
         initialAmount={initialAmount}
+        initialSlippage={selectedProposal?.slippage}
         onSuccess={handleTradeSuccess}
       />
     </div>

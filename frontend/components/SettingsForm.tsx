@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useSettings } from "../context/SettingsContext";
+import { BACKEND_URL } from "../constants/config";
 
 type TradeExecution = {
   tx_hash: string;
@@ -11,6 +12,7 @@ type TradeExecution = {
   token: string;
   price: number;
   token_amount: number;
+  price_usd?: number;
   network_fee: number;
   status: string;
   timestamp: number;
@@ -22,10 +24,9 @@ const QUOTE_USD_RATES: Record<string, number> = {
   ETH: 3000, WETH: 3000, USDC: 1, USDT: 1, DAI: 1,
 };
 const tradeAmountUSD = (t: TradeExecution) =>
-  t.amount * (QUOTE_USD_RATES[t.token] ?? 1);
-
-const backendUrl =
-  process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
+  t.price_usd && t.token_amount
+    ? t.token_amount * t.price_usd
+    : t.amount * (QUOTE_USD_RATES[t.token] ?? 1);
 
 export default function SettingsForm() {
   const { 
@@ -50,7 +51,7 @@ export default function SettingsForm() {
   });
 
   useEffect(() => {
-    fetch(`${backendUrl}/agents/status`)
+    fetch(`${BACKEND_URL}/agents/status`)
       .then(res => res.json())
       .then(data => setAgentStatus(data))
       .catch(console.error);
@@ -257,7 +258,7 @@ export default function SettingsForm() {
                           localStorage.setItem("dexTrader_agentCacheDuration", newValue.toString());
                           
                           // Send the setting to the backend
-                          fetch(`${backendUrl}/agents/config/cache-duration`, {
+                          fetch(`${BACKEND_URL}/agents/config/cache-duration`, {
                             method: "POST",
                             headers: {
                               "Content-Type": "application/json",
@@ -280,7 +281,7 @@ export default function SettingsForm() {
                         localStorage.setItem("dexTrader_agentCacheDuration", newValue.toString());
                         
                         // Send the setting to the backend
-                        fetch(`${backendUrl}/agents/config/cache-duration`, {
+                        fetch(`${BACKEND_URL}/agents/config/cache-duration`, {
                           method: "POST",
                           headers: {
                             "Content-Type": "application/json",
@@ -481,7 +482,7 @@ export default function SettingsForm() {
                       if (filters.startDate) params.append("start_date", Math.floor(new Date(filters.startDate).getTime() / 1000).toString());
                       if (filters.endDate) params.append("end_date", Math.floor(new Date(filters.endDate).getTime() / 1000 + 86399).toString());
                       
-                      const res = await fetch(`${backendUrl}/portfolio/trades?${params.toString()}`);
+                      const res = await fetch(`${BACKEND_URL}/portfolio/trades?${params.toString()}`);
                       if (!res.ok) throw new Error("Failed to fetch report data");
                       const data = await res.json();
                       setReportData(data);

@@ -8,6 +8,7 @@ import {
   useRef
 } from "react";
 import { useSettings } from "./SettingsContext";
+import { BACKEND_URL } from "../constants/config";
 
 export type Signal = {
   pair: string;
@@ -30,9 +31,6 @@ const SignalsContext = createContext<SignalsContextType | undefined>(
   undefined
 );
 
-const backendUrl =
-  process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
-
 export function SignalsProvider({ children }: { children: ReactNode }) {
   const { pollingInterval } = useSettings();
   const [signals, setSignals] = useState<Signal[]>([]);
@@ -46,7 +44,7 @@ export function SignalsProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(`${backendUrl}/signals?limit=200`);
+      const res = await fetch(`${BACKEND_URL}/signals?limit=200`);
       if (!res.ok) {
         throw new Error("Failed to load signals");
       }

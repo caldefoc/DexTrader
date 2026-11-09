@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { BACKEND_URL } from "@/constants/config";
+import { useMarketData } from "@/context/MarketDataContext";
 
 type Trade = {
   tx_hash: string;
@@ -12,6 +13,7 @@ type Trade = {
   token: string;
   price?: number;
   token_amount?: number;
+  price_usd?: number;
   network_fee: number;
   status: string;
   timestamp: number;
@@ -20,9 +22,13 @@ type Trade = {
 const PAGE_SIZE = 50;
 
 export default function ReportsPage() {
+  const { marketData } = useMarketData();
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+
+  const ethPrice =
+    marketData.find((pair) => pair.base_symbol.toUpperCase() === "ETH")?.price ?? 3000;
 
   useEffect(() => {
     async function fetchTrades() {
@@ -32,10 +38,7 @@ export default function ReportsPage() {
         const res = await fetch(`${BACKEND_URL}/portfolio/trades?limit=1000&_=${Date.now()}`);
         if (res.ok) {
           const json = await res.json();
-          // Backend returns newest last? Or newest first?
-          // Usually python append adds to end. So reverse to show newest first.
-          console.log("Fetched trades from backend (first 5 - oldest):", JSON.parse(JSON.stringify(json.slice(0, 5)))); // Debug first 5 trades
-          console.log("Fetched trades from backend (last 5 - newest):", JSON.parse(JSON.stringify(json.slice(-5)))); // Debug last 5 trades
+          // Backend appends newest last; reverse for newest-first display.
           setTrades(json.reverse());
         }
       } catch (e) {
@@ -48,23 +51,30 @@ export default function ReportsPage() {
   }, []);
 
   const handleDownload = () => {
-    window.open(`${BACKEND_URL}/portfolio/trades/export`, "_blank");
+    window.open(
+      `${BACKEND_URL}/portfolio/trades/export?eth_price=${ethPrice}`,
+      "_blank"
+    );
   };
 
-  // Function to convert amounts to USD based on currency
+  // Prefer the USD price captured at execution; fall back to live market data
+  // and finally to the stablecoin table. ETH is no longer hardcoded.
   const convertToUSD = (amount: number, currency: string): number => {
-    // Simple conversion rates (you might want to fetch these from an API)
-    const conversionRates: Record<string, number> = {
-      ETH: 3000,
-      WETH: 3000,  // WETH is 1:1 with ETH
-      USDC: 1,     // USDC is 1:1 with USD
-      USDT: 1,     // USDT is 1:1 with USD
-      DAI: 1,      // DAI is 1:1 with USD
-      BONK: 0.00002, // BONK to USD rate (approximate)
-      SHIB: 0.00001, // SHIB to USD rate (approximate)
+    const stableRates: Record<string, number> = {
+      USDC: 1,
+      USDT: 1,
+      DAI: 1,
     };
-    
-    return amount * (conversionRates[currency] || 1);
+    const market = marketData.find(
+      (pair) => pair.base_symbol.toUpperCase() === currency.toUpperCase()
+    )?.price;
+    const rate =
+      market ??
+      (currency.toUpperCase() === "ETH" || currency.toUpperCase() === "WETH"
+        ? ethPrice
+        : stableRates[currency.toUpperCase()]) ??
+      1;
+    return amount * rate;
   };
 
   const getTradeDisplay = (t: Trade) => {
@@ -123,7 +133,10 @@ export default function ReportsPage() {
         quoteCurrencyForConversion = t.token;
     }
 
-    const amountUSD = convertToUSD(quoteAmount, quoteCurrencyForConversion);
+    const amountUSD =
+      t.price_usd && t.token_amount
+        ? t.token_amount * t.price_usd
+        : convertToUSD(quoteAmount, quoteCurrencyForConversion);
     const displayPrice = displayTokenAmount ? amountUSD / displayTokenAmount : 0;
     const feeUSD = t.network_fee || 0;
     const totalUSD = Math.max(amountUSD + feeUSD, 0);

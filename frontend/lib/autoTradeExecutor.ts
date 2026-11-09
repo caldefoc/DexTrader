@@ -183,12 +183,15 @@ export async function executeAutoSwap(params: AutoTradeParams): Promise<AutoTrad
       }
     }
 
-    // Execute swap via V3 Router
+    // Execute swap via V3 Router (SwapRouter02).  The router has no per-call
+    // deadline, so wrap the swap in multicall(deadline, ...) to cap how long
+    // the transaction can sit in the mempool.
     const v3Router = new Contract(
       BASE_V3_ROUTER,
       [
         "function exactInputSingle(tuple(address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) external payable returns (uint256 amountOut)",
-        "function exactInput(tuple(bytes path, address recipient, uint256 amountIn, uint256 amountOutMinimum) params) external payable returns (uint256 amountOut)"
+        "function exactInput(tuple(bytes path, address recipient, uint256 amountIn, uint256 amountOutMinimum) params) external payable returns (uint256 amountOut)",
+        "function multicall(uint256 deadline, bytes[] data) external payable returns (bytes[] results)"
       ],
       signer
     );
@@ -226,19 +229,15 @@ export async function executeAutoSwap(params: AutoTradeParams): Promise<AutoTrad
     // EIP-7702 Gas Station -> FAILED_TIMEOUT). Ethers v6 populates it from the
     // network for normal transactions.
 
-    let tx: any;
-    try {
-      if (bestPath) {
-        // Multi-hop route
-        tx = await v3Router.exactInput({
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 120);
+    const callData = bestPath
+      ? v3Router.interface.encodeFunctionData("exactInput", [{
           path: bestPath,
           recipient: signerAddress,
           amountIn: amountIn,
           amountOutMinimum: minOut
-        }, overrides);
-      } else {
-        // Direct route
-        tx = await v3Router.exactInputSingle({
+        }])
+      : v3Router.interface.encodeFunctionData("exactInputSingle", [{
           tokenIn: inputAddress,
           tokenOut: outputAddress,
           fee: bestFee,
@@ -246,8 +245,22 @@ export async function executeAutoSwap(params: AutoTradeParams): Promise<AutoTrad
           amountIn: amountIn,
           amountOutMinimum: minOut,
           sqrtPriceLimitX96: 0
-        }, overrides);
-      }
+        }]);
+
+    // Pre-execution simulation: run the exact call against current state before
+    // opening MetaMask.  A revert here is cheaper than a failed on-chain tx.
+    try {
+      await v3Router.multicall.staticCall(deadline, [callData], overrides);
+    } catch (simErr: any) {
+      return {
+        success: false,
+        error: `Pre-execution simulation failed: ${simErr?.shortMessage || simErr?.message || simErr}`
+      };
+    }
+
+    let tx: any;
+    try {
+      tx = await v3Router.multicall(deadline, [callData], overrides);
     } catch (execErr: any) {
       if (execErr?.value?.hash) {
         tx = {

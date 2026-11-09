@@ -2,8 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useWallet } from "../context/WalletContext";
 import { useSettings } from "../context/SettingsContext";
 import { AUTO_TRADE_TARGETS, executeAutoSwap, isAutoTradeEligible } from "../lib/autoTradeExecutor";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
+import { BACKEND_URL } from "../constants/config";
 
 interface TradeProposal {
   id: string;
@@ -16,6 +15,7 @@ interface TradeProposal {
   status: "pending" | "approved" | "rejected" | "executed";
   slippage: number;
   timestamp: number;
+  auto_tradeable?: boolean;
 }
 
 export function useAutoTrading() {
@@ -71,8 +71,10 @@ export function useAutoTrading() {
     if (result.success && result.txHash) {
       console.log(`[AutoTrading] SUCCESS! TxHash: ${result.txHash}`);
       try {
-        await fetch(`${BACKEND_URL}/agents/proposals/${proposal.id}/complete?tx_hash=${result.txHash}`, {
-          method: "POST"
+        await fetch(`${BACKEND_URL}/agents/proposals/${proposal.id}/complete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tx_hash: result.txHash }),
         });
         console.log("[AutoTrading] Proposal status updated to 'executed'");
       } catch (e) {
@@ -163,8 +165,12 @@ export function useAutoTrading() {
         for (const proposal of fresh) {
           processedIdsRef.current.add(proposal.id);
 
-          // USDC is settlement, not a strategy target.
-          if (!AUTO_TRADE_TARGETS.includes(proposal.token.toUpperCase())) {
+          // USDC is settlement, not a strategy target.  The backend also marks
+          // proposals it knows the browser executor cannot fill.
+          if (
+            proposal.auto_tradeable === false ||
+            !AUTO_TRADE_TARGETS.includes(proposal.token.toUpperCase())
+          ) {
             console.log(`[AutoTrading] SKIPPED: ${proposal.token} not in auto-trade targets`);
             continue;
           }

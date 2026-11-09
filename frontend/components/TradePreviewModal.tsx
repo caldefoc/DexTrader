@@ -28,6 +28,7 @@ type Props = {
   onSuccess?: (txHash?: string) => void;
   signal: TradeSignal | null;
   initialAmount?: string;
+  initialSlippage?: number;
 };
 
 export default function TradePreviewModal(props: Props) {
@@ -40,7 +41,9 @@ export default function TradePreviewModal(props: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [amount, setAmount] = useState(props.initialAmount || "");
-  const [slippage, setSlippage] = useState("0.5");
+  const [slippage, setSlippage] = useState(
+    props.initialSlippage != null ? String(props.initialSlippage) : "0.5"
+  );
   const [gasPriceGwei, setGasPriceGwei] = useState("0.01");
   
   // Token-specific slippage settings for problematic tokens
@@ -152,6 +155,14 @@ export default function TradePreviewModal(props: Props) {
         setAmount("");
     }
   }, [props.open, props.initialAmount]);
+
+  useEffect(() => {
+    if (props.open) {
+      setSlippage(
+        props.initialSlippage != null ? String(props.initialSlippage) : "0.5"
+      );
+    }
+  }, [props.open, props.initialSlippage]);
 
   useEffect(() => {
     const timer = setTimeout(() => {

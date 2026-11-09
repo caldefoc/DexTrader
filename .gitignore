@@ -27,6 +27,8 @@ tsconfig.tsbuildinfo
 backend/trades.json
 backend/trades.json.*
 backend/deleted_corrupted_trades.json
+backend/agent_state.json
+backend/price_history.json
 backend/agents.log
 backend/agents.log.*
 backend/uvicorn.*
