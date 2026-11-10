@@ -32,6 +32,7 @@ backend/price_history.json
 backend/demo_portfolio.json
 backend/agents.log
 backend/agents.log.*
+frontend/dev.log
 backend/uvicorn.*
 backend/acct*.json
 backend/nonce*.json
