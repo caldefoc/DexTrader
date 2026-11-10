@@ -25,6 +25,22 @@ const MarketDataContext = createContext<MarketDataContextType | undefined>(undef
 const MARKET_DATA_KEY = "dexTrader_marketData";
 const LAST_UPDATED_KEY = "dexTrader_marketDataLastUpdated";
 
+// AbortSignal.timeout() is missing on older mobile browsers (Chrome < 103),
+// where calling it throws inside the request path. Fall back to a controller.
+function timeoutSignal(ms: number): AbortSignal {
+  const factory = (AbortSignal as any)?.timeout;
+  if (typeof factory === "function") {
+    try {
+      return factory.call(AbortSignal, ms);
+    } catch {
+      // fall through
+    }
+  }
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
+}
+
 export function MarketDataProvider({ children }: { children: React.ReactNode }) {
   const [marketData, setMarketData] = useState<TradingPair[]>([]);
   const [loading, setLoading] = useState(false);
@@ -72,7 +88,7 @@ export function MarketDataProvider({ children }: { children: React.ReactNode }) 
       const healthCheck = await fetch(`${BACKEND_URL}/health`, { 
         method: 'GET',
         // Short timeout for health check
-        signal: AbortSignal.timeout(3000)
+        signal: timeoutSignal(3000)
       });
       
       if (!healthCheck.ok) {

@@ -1,5 +1,6 @@
 "use client";
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { storageGet, storageSet } from "../lib/safeStorage";
 
 type Currency = "USD" | "EUR";
 export type Network = "sepolia" | "mainnet" | "base" | "arbitrum";
@@ -38,19 +39,19 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (typeof window !== "undefined") {
       // Load currency
-      const savedCurrency = localStorage.getItem("dexTrader_currency");
+      const savedCurrency = storageGet("dexTrader_currency");
       if (savedCurrency === "EUR" || savedCurrency === "USD") {
         setCurrency(savedCurrency);
       }
 
       // Load network
-      const savedNetwork = localStorage.getItem("dexTrader_network");
+      const savedNetwork = storageGet("dexTrader_network");
       if (savedNetwork === "mainnet" || savedNetwork === "sepolia" || savedNetwork === "base" || savedNetwork === "arbitrum") {
         setNetwork(savedNetwork);
       }
 
       // Load polling interval
-      const savedInterval = localStorage.getItem("dexTrader_pollingInterval");
+      const savedInterval = storageGet("dexTrader_pollingInterval");
       if (savedInterval) {
         const val = parseInt(savedInterval, 10);
         if (!isNaN(val) && val > 0) {
@@ -59,7 +60,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Load market refresh interval
-      const savedMarketInterval = localStorage.getItem("dexTrader_marketRefreshInterval");
+      const savedMarketInterval = storageGet("dexTrader_marketRefreshInterval");
       if (savedMarketInterval) {
         const val = parseInt(savedMarketInterval, 10);
         if (!isNaN(val) && val > 0) {
@@ -68,7 +69,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Load agent cache duration
-      const savedAgentCache = localStorage.getItem("dexTrader_agentCacheDuration");
+      const savedAgentCache = storageGet("dexTrader_agentCacheDuration");
       if (savedAgentCache) {
         const val = parseInt(savedAgentCache, 10);
         if (!isNaN(val) && val > 0) {
@@ -77,13 +78,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Load auto trading
-      const savedAuto = localStorage.getItem("dexTrader_autoTrading");
+      const savedAuto = storageGet("dexTrader_autoTrading");
       if (savedAuto === "true") {
         setAutoTrading(true);
       }
 
       // Load auto trading interval
-      const savedAutoInterval = localStorage.getItem("dexTrader_autoTradingInterval");
+      const savedAutoInterval = storageGet("dexTrader_autoTradingInterval");
       if (savedAutoInterval) {
         const val = parseInt(savedAutoInterval, 10);
         if (!isNaN(val) && val >= 30) {
@@ -106,49 +107,49 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const updateCurrency = (c: Currency) => {
     setCurrency(c);
     if (typeof window !== "undefined") {
-      localStorage.setItem("dexTrader_currency", c);
+      storageSet("dexTrader_currency", c);
     }
   };
 
   const updateNetwork = (n: Network) => {
     setNetwork(n);
     if (typeof window !== "undefined") {
-      localStorage.setItem("dexTrader_network", n);
+      storageSet("dexTrader_network", n);
     }
   };
 
   const updatePollingInterval = (n: number) => {
     setPollingInterval(n);
     if (typeof window !== "undefined") {
-      localStorage.setItem("dexTrader_pollingInterval", n.toString());
+      storageSet("dexTrader_pollingInterval", n.toString());
     }
   };
 
   const updateMarketRefreshInterval = (n: number) => {
     setMarketRefreshInterval(n);
     if (typeof window !== "undefined") {
-      localStorage.setItem("dexTrader_marketRefreshInterval", n.toString());
+      storageSet("dexTrader_marketRefreshInterval", n.toString());
     }
   };
 
   const updateAgentCacheDuration = (n: number) => {
     setAgentCacheDuration(n);
     if (typeof window !== "undefined") {
-      localStorage.setItem("dexTrader_agentCacheDuration", n.toString());
+      storageSet("dexTrader_agentCacheDuration", n.toString());
     }
   };
 
   const updateAutoTrading = (b: boolean) => {
     setAutoTrading(b);
     if (typeof window !== "undefined") {
-      localStorage.setItem("dexTrader_autoTrading", b.toString());
+      storageSet("dexTrader_autoTrading", b.toString());
     }
   };
 
   const updateAutoTradingInterval = (n: number) => {
     setAutoTradingInterval(n);
     if (typeof window !== "undefined") {
-      localStorage.setItem("dexTrader_autoTradingInterval", n.toString());
+      storageSet("dexTrader_autoTradingInterval", n.toString());
     }
   };
 
