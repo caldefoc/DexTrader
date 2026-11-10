@@ -1,0 +1,5 @@
+- Route handlers are thin wrappers around service/controller methods, with request bodies modeled as local Pydantic `BaseModel` subclasses defined in the same file.
+- Long-running background work is driven by a singleton instance (e.g. `controller = ControllerAgent()` at module bottom) imported directly by routes rather than passed through dependency injection.
+- External API keys and feature toggles are read exclusively from environment variables via `os.getenv` in `app/core/config.py`, loaded once by `load_dotenv(find_dotenv())`.
+- Persistent runtime state is serialized to JSON files through the `JsonStateStore` abstraction, with reconstruction helpers (`_reconstruct_state_from_trades`, `_reconstruct_demo_state`) called during agent initialization.
+- Audit logging goes through the centralized `AuditAgent.log(level=..., data=...)` helper instead of ad-hoc print statements, used consistently across all agent classes.

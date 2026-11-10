@@ -1,0 +1,1 @@
+Next.js 14.2.3 + React 18.2 + TypeScript 5.4, styled with Tailwind CSS 3.4, wallet integration via MetaMask's injected `window.ethereum` using ethers v6.13.2, targeting Base (chainId 8453) and Uniswap V3 Router02/Quoter contracts.

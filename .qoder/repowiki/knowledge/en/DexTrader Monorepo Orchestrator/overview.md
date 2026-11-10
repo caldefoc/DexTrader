@@ -1,0 +1,1 @@
+Root of the DexTrader monorepo that wires a FastAPI trading backend and a Next.js DEX dashboard into a single demo stack via shared env, Docker Compose, and Windows launchers.

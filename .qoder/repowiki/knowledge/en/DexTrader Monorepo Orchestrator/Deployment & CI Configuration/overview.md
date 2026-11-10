@@ -1,0 +1,1 @@
+Hosts the production deployment recipe (Caddy reverse proxy snippet and Docker Compose instructions) plus the GitHub Actions CI pipeline that builds, tests, and lints both backend and frontend.

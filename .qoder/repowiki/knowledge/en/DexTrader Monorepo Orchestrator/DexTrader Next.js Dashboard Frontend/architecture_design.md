@@ -1,0 +1,8 @@
+Built as a Next.js 14 App Router application under `app/`, with one route per feature (`dashboard`, `agents`, `portfolio`, `reports`, `news`, `settings`) and shared chrome in `layout.tsx`.
+
+- State layer: four React Context providers are composed in `app/layout.tsx` — `WalletProvider` (MetaMask address/chain), `SettingsProvider`, `MarketDataProvider`, `SignalsProvider` — plus an `AutoTradingProvider` component wrapping the app shell.
+- UI layer: page components compose reusable presentational components from `components/` (Navbar, MarketTable, PortfolioTable, SignalsPanel, AgentsControlPanel, SettingsForm, WalletConnectButton, TradePreviewModal, DemoBanner, GainersLosersToggle).
+- Execution layer: `lib/autoTradeExecutor.ts` is the only place that talks to Ethereum via ethers v6; it queries Uniswap V3 Quoter for quotes across all fee tiers, falls back to multi-hop routes through high-liquidity intermediates (WETH, USDC, AERO, VIRTUAL, CBBTC), handles token approvals, gas price overrides, and pre-execution simulation before sending a `multicall(deadline, ...)` transaction.
+- Constants: `constants/config.ts` exposes `DEMO_MODE` and `constants/tokens.ts` holds Base chain addresses for tokens and the V3 Router/Quoter.
+- Styling: Tailwind CSS 3 with custom theme colors defined in `tailwind.config.ts`; global styles live in `app/globals.css`.
+- Deployment: containerized via `Dockerfile`, linted by ESLint (`next lint`), and tests run Node scripts against the auto-trade policy logic via `npm test`.

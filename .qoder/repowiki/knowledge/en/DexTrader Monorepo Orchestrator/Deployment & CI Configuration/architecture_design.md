@@ -1,0 +1,4 @@
+Two concerns co-located in this leaf module:
+- `deploy/Caddyfile.snippet` is an include fragment for the host's global Caddy config at `/etc/caddy/Caddyfile`. It terminates TLS for `dextrader.caldefoc.com`, strips the `/api` prefix before proxying to FastAPI on `127.0.0.1:8000`, and proxies all other paths to Next.js on `127.0.0.1:3000`; it also sets HSTS, nosniff, referrer-policy, and suppresses the Server header.
+- `.github/workflows/ci.yml` defines three parallel jobs: `backend` (Python 3.12 + unittest against `backend/requirements.txt`), `frontend` (Node 20 + TypeScript build with `NEXT_PUBLIC_BACKEND_URL` set), and a `no-personal-data` job that fails if runtime state files (`trades.json`, `agent_state.json`, etc.) are tracked in git.
+The README documents the one-shot host setup (`/srv/dextrader`, `.env.example`, `docker compose up -d --build`) and the incremental update flow (`git pull && docker compose up -d --build`).

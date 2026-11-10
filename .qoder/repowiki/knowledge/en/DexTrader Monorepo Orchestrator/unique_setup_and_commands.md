@@ -1,0 +1,1 @@
+Root-level convenience scripts: `start_dev.bat` opens two PowerShell windows (one per service), `start-all.ps1` splits one Windows Terminal tab into two panes with optional `-Install`/`-Manual` flags. Production demo is `cp .env.example .env && docker compose up -d --build` with `DEMO_MODE=1` and `NEXT_PUBLIC_DEMO_MODE=1`.

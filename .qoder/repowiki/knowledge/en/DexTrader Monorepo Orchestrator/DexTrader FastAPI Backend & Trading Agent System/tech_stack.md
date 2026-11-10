@@ -1,0 +1,1 @@
+FastAPI 0.128 + Uvicorn ASGI server, LangChain 1.2 with langchain-openai for LLM-powered analysis, Pydantic v2 for request/response models, httpx for HTTP calls, feedparser for RSS/news, python-dotenv for config.

@@ -44,7 +44,9 @@ backend/*.backup
 backend/*.bak
 
 # Generated repository wiki (regenerate before publishing)
-.qoder/
+# Qoder workspace state. The generated wiki is published; nothing else is.
+.qoder/*
+!.qoder/repowiki/
 
 # Demo / deployment secrets
 *.pem

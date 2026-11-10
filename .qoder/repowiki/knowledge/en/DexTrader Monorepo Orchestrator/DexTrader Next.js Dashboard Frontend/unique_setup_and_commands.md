@@ -1,0 +1,1 @@
+`npm run dev` starts the Next dev server; `npm run build` / `npm run start` for production; `npm run lint` runs Next ESLint; `npm test` executes Node scripts `../scripts/test_auto_trade_policy.cjs` and `../scripts/test_base_token_support.cjs` against the auto-trade executor. A `.env.local` file is expected for environment variables.

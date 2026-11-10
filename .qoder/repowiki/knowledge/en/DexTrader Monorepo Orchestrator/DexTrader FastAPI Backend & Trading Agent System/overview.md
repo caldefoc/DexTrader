@@ -1,0 +1,1 @@
+FastAPI backend exposing market, portfolio, signals, news and agent-control endpoints, driving a long-running trading agent loop that analyzes prices, applies risk guardrails and emits trade proposals.

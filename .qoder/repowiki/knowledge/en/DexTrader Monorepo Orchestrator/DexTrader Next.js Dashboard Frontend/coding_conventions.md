@@ -1,0 +1,5 @@
+- Client-only components and hooks are marked with the `'use client'` directive at the top of the file, while pure data modules like `lib/autoTradeExecutor.ts` remain server-compatible.
+- Global state is exposed through React Context providers wrapped around the root layout, each paired with a typed `useXxx()` hook that throws when used outside its provider.
+- Demo vs. production behavior is gated by the `DEMO_MODE` constant imported from `constants/config.ts`, which toggles UI elements (DemoBanner, WalletConnectButton) and runtime paths.
+- On-chain interactions go exclusively through `lib/autoTradeExecutor.ts`, which validates eligibility, resolves token decimals, quotes via Uniswap V3 Quoter, and returns a uniform `{ success, txHash?, error? }` result shape.
+- Token and contract addresses are centralized in `constants/tokens.ts` and referenced by symbol keys rather than being scattered across components.

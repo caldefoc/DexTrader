@@ -1,0 +1,1 @@
+Caddy v2 reverse-proxy configuration; GitHub Actions with `actions/setup-python@v5` (Python 3.12) and `actions/setup-node@v4` (Node 20); Python `unittest` and TypeScript `tsc --noEmit` as the test/lint gates.

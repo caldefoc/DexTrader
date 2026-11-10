@@ -1,0 +1,2 @@
+- Runtime/personal data files (`trades.json`, `agent_state.json`, `price_history.json`, `demo_portfolio.json`, `agents.log`, etc.) are explicitly gitignored and guarded by a CI job that fails if any of them appear in `git ls-files`.
+- Frontend build-time environment variables (`NEXT_PUBLIC_BACKEND_URL`, `NEXT_PUBLIC_DEMO_MODE`) are treated as immutable once baked into the image — changing them requires `docker compose build frontend` rather than a plain restart.

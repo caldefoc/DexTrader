@@ -1,0 +1,1 @@
+Python 3.12+ FastAPI/Uvicorn paired with Node 20+ Next.js 14 App Router; Docker Compose is the single entry point for the demo deployment.

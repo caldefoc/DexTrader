@@ -1,0 +1,2 @@
+- Secrets and feature toggles are declared once in the root `.env` (copied from `.env.example`) and consumed independently by each child process rather than passed between them.
+- Demo mode is a dual flag: `DEMO_MODE` for the backend and `NEXT_PUBLIC_DEMO_MODE` baked into the frontend build must agree for the hosted demo to behave consistently.

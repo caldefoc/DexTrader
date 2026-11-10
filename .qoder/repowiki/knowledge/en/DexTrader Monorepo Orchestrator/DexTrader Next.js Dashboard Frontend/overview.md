@@ -1,0 +1,1 @@
+Next.js App Router dashboard for monitoring CoinMarketCap markets, displaying agent-driven signals, and executing non-custodial Uniswap V3 swaps on Base via MetaMask.

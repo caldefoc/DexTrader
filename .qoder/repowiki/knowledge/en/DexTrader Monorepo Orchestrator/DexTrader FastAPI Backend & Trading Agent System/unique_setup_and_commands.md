@@ -1,0 +1,1 @@
+Run with `uvicorn app.main:app` from the `backend/` directory; requires `.env` variables `COINMARKETCAP_API_KEY`, `COINGECKO_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`; set `DEMO_MODE=1` to run without a wallet using the simulated portfolio. Tests are plain pytest files under `backend/` (e.g. `test_agent_routes.py`, `test_risk_agent.py`).
