@@ -1,5 +1,6 @@
 "use client";
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
+import { DEMO_MODE } from "../constants/config";
 
 interface WalletContextType {
   address: string | null;
@@ -36,9 +37,19 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    if (typeof window !== "undefined" && (window as any).ethereum) {
+    // The demo build never involves a wallet, so it never touches the provider.
+    if (DEMO_MODE || typeof window === "undefined") return;
+
+    // Injected providers are third-party objects and some of them are proxies
+    // whose traps throw on ordinary reads: Brave Wallet on Android raises
+    // "get' on proxy: property 'on' is a read-only and non-configurable data
+    // property" for `ethereum.on`.  An uncaught throw here unmounts the whole
+    // React tree, so the app would fail to start in that browser only.
+    let cleanup: (() => void) | undefined;
+    try {
       const ethereum = (window as any).ethereum;
-      
+      if (!ethereum) return;
+
       // Check if already connected
       ethereum.request({ method: "eth_accounts" }).then((accounts: string[]) => {
         if (accounts.length > 0) {
@@ -55,20 +66,29 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           setAddress(null);
         }
       };
-      
+
       const handleChainChanged = (value: string) => {
         ++chainRevision.current;
         setChainId(parseChainId(value));
       };
+
       readChainId(ethereum);
       ethereum.on("accountsChanged", handleAccountsChanged);
       ethereum.on("chainChanged", handleChainChanged);
-      return () => {
+      cleanup = () => {
         ++chainRevision.current;
-        ethereum.removeListener("accountsChanged", handleAccountsChanged);
-        ethereum.removeListener("chainChanged", handleChainChanged);
+        try {
+          ethereum.removeListener("accountsChanged", handleAccountsChanged);
+          ethereum.removeListener("chainChanged", handleChainChanged);
+        } catch {
+          // Provider went away or its traps reject access; nothing to remove.
+        }
       };
+    } catch (err) {
+      console.warn("[Wallet] injected provider is unusable, continuing without it:", err);
+      return;
     }
+    return cleanup;
   }, []);
 
   async function connect() {

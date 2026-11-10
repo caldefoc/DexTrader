@@ -6,13 +6,13 @@ It was built as a personal experiment in semi-autonomous trading: a small pipeli
 
 The strategy rules from the original design brief (`agent_guidelines.txt`) are implemented: RSI(14), VWAP deviation, a 5-minute volume-spike filter, a scale-out ladder, stop-loss and trailing stops, a daily drawdown circuit breaker and a kill switch. What remains thin is the infrastructure around them — JSON files instead of a database, global spot pricing rather than the DEX pool the swap executes against, and a localhost-only security posture. [Remaining gaps](#remaining-gaps) lists them honestly.
 
-This is a **reference release**: the code runs and is tested, but it is not a product and it is not financial advice. It talks to Base mainnet by default and moves real funds when you approve a swap — use a testnet or small amounts until you trust it. A hosted demo with a simulated portfolio and no wallet runs at <https://dextrader.caldefoc.com> (see [Demo mode](#demo-mode)).
+This is a **reference release**: the code runs and is tested, but it is not a product and it is not financial advice. It talks to Base mainnet by default and moves real funds when you approve a swap — use a testnet or small amounts until you trust it. It is also not a fresh experiment: the author has run it as his own daily trading dashboard since early 2026, and most of what is fixed here came from that use rather than from the test suite. A hosted demo with a simulated portfolio and no wallet runs at <https://dextrader.caldefoc.com> (see [Demo mode](#demo-mode)).
 
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue) ![Next.js](https://img.shields.io/badge/Next.js-14.2.3-black) ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 
 ## What it does
 
-1. **Market data.** The backend pulls a ranked listing from CoinMarketCap's keyless `trial-pro-api` host (top 50 for the agent loop, top 200 for the dashboard), then fills in the 46 hardcoded `PRIORITY_SYMBOLS` — the tokens this thing actually trades — most of which sit outside that listing. Since the trial host returns 403 for `quotes/latest`, the fill-in comes from CoinGecko by coin id instead. Prices are global spot prices in USD, not Base DEX pool prices. The dashboard caches results for one hour (five minutes for the Base-token and volume panels); the agent loop uses its own 60-second cache so the strategy sees fresh prices.
+1. **Market data.** The backend pulls a ranked listing from CoinMarketCap's keyless `trial-pro-api` host (top 50 for the agent loop, top 200 for the dashboard), then fills in the 46 hardcoded `PRIORITY_SYMBOLS` — the tokens this app actually trades — most of which sit outside that listing. Since the trial host returns 403 for `quotes/latest`, the fill-in comes from CoinGecko by coin id instead. Prices are global spot prices in USD, not Base DEX pool prices. The dashboard caches results for one hour (five minutes for the Base-token and volume panels); the agent loop uses its own 60-second cache so the strategy sees fresh prices.
 2. **Signals.** `GET /signals` tries DeepSeek first (plain `httpx` call to `api.deepseek.com`, model `deepseek-chat`), falls back to OpenAI `gpt-4o-mini` through LangChain, and finally to a deterministic rule: `≥ +10%` 24h → sell, `≤ −10%` → buy, else hold (`services/strategy.py`).
 3. **Agent pipeline.** The `Controller` agent runs a loop: poll market data → filter to the 17 monitored tokens ∪ current holdings → record the sample in a rolling price/volume history → `AnalysisAgent` (indicator-gated dip buys, scale-out ladder, stop ladder, trailing stop) → `RiskAgent` (confidence, live gas ceiling, gas-vs-profit, position cap, portfolio circuit breakers) → `ExecutionAgent` (sizes the trade, or rejects it when there is no buying power) → append a `TradeProposal`. `AuditAgent` writes every step to a rotating `backend/agents.log` (5 MB × 3) and keeps the last 1,000 entries in memory for the UI.
 4. **Human approval, then on-chain execution.** Proposals are fetched by the browser. The Agents page polls `/agents/proposals` every 2 s; the optional auto-trade mode polls on its own interval and executes eligible proposals without a click. Either way the swap is built and sent **in the browser** through the injected wallet (`window.ethereum`), then the result (including `price_usd` at execution and the `tx_hash`) is POSTed back to `/portfolio/trade`.
@@ -139,19 +139,24 @@ frontend/
   hooks/useAutoTrading.ts   proposal → swap loop
   lib/autoTradeExecutor.ts  Uniswap V3 quoting + execution on Base
   constants/tokens.ts       per-chain token, router and quoter addresses
+  public/                   favicon set, PWA icon, social card (see below)
 scripts/                    cross-cutting tests (node:test and Playwright)
 agent_guidelines.txt        the original design brief
 ```
+
+`frontend/public/` carries the mark: an SVG favicon (sharpest on modern browsers), 32 and 48 px PNGs, a 180 px `apple-touch-icon`, a multi-size `dextrader.ico`, a 512 px icon referenced by `manifest.webmanifest`, and a 1200×630 social card. All of them are declared in `app/layout.tsx` `metadata`, so they also drive the favicon, the install prompt and link previews.
 
 ## Tests
 
 CI (`.github/workflows/ci.yml`) runs the backend unit tests, the frontend policy tests, `tsc --noEmit` and `next build` on every push, and fails if runtime data is ever tracked.
 
-- **Backend unit tests** — 116 tests across `test_base_market.py`, `test_token_volumes.py`, `test_auto_trade_policy.py`, `test_base_token_support.py`, `test_indicators.py`, `test_market_history.py`, `test_analysis_agent.py`, `test_risk_agent.py`, `test_execution_agent.py`, `test_guardrails.py`, `test_agent_routes.py`, `test_demo_portfolio.py` and `test_demo_routes.py`. Plain `unittest`; all upstream HTTP is mocked. They import `app.*`, so run from `backend/`: `python -m unittest discover -p "test_*.py"`.
+- **Backend unit tests** — 130 tests across `test_base_market.py`, `test_token_volumes.py`, `test_auto_trade_policy.py`, `test_base_token_support.py`, `test_indicators.py`, `test_market_history.py`, `test_analysis_agent.py`, `test_risk_agent.py`, `test_execution_agent.py`, `test_guardrails.py`, `test_agent_routes.py`, `test_controller_state.py`, `test_signals_route.py`, `test_demo_portfolio.py` and `test_demo_routes.py`. Plain `unittest`; all upstream HTTP is mocked. They import `app.*`, so run from `backend/`: `python -m unittest discover -p "test_*.py"`.
 - **Frontend policy tests** — 18 tests in `scripts/test_auto_trade_policy.cjs` and `scripts/test_base_token_support.cjs`. `node:test`, but they transpile the real `.ts` sources in memory with `require("../frontend/node_modules/typescript")`, so `npm install` must have run. Run: `npm test` from `frontend/`, or `node --test scripts/test_auto_trade_policy.cjs`.
 - **Browser smoke test** — `scripts/test_portfolio_display.py`: Playwright driving installed Chrome headless against `http://127.0.0.1:3000` (override with `PORTFOLIO_TEST_URL`), intercepting all network calls and injecting a fake `window.ethereum`. Playwright is **not** in `requirements.txt`. A dev server must be running.
 
-Not tested: the agent proposal → execution path end to end in a browser, the swap construction inside `TradePreviewModal`, news parsing, anything touching a real chain or a real wallet.
+What the automated tests do not cover: the agent proposal → execution path end to end in a browser, the swap construction inside `TradePreviewModal`, news parsing, and anything that touches a real chain or a real wallet. That is a statement about the test suite, not about the code's exposure — those are the paths the author uses every day, and roughly nine months of daily use (since early 2026) have been through them, against the older private repository this release is cut from. The same applies to the demo: it is live, but nobody clicks through it as part of CI.
+
+So: CI is a floor. It proves the pieces still fit together, not that the trading loop is correct.
 
 ## Strategy and safety rules
 
@@ -177,15 +182,15 @@ Honest inventory of what is still thin, hardcoded, or a deliberate simplificatio
 - **JSON persistence.** State is written atomically, but there is no database, no migration path and no multi-process safety; two Uvicorn workers would fight over the same files. Concurrent writes from the browser and the agent loop are serialised in-process only.
 - **Security posture is localhost-only.** No auth, no user model, wallet addresses never persisted server-side, and CORS is a configuration default rather than a security boundary. The audit log now rotates, but there is no retention policy beyond that.
 - **Market cache is long for a trading UI.** The dashboard's market cache is 3,600 s by default (configurable); the agent loop uses 60 s, so proposals stay fresh even when the table does not.
-- **Repository hygiene.** `backend/trades.json`, `agents.log`, `agent_state.json`, `price_history.json`, the `*.backup` copies and the raw JSON-RPC dumps are gitignored and must stay that way; CI fails if any is tracked. `.qoder/repowiki/` is excluded until it is regenerated against the current code.
+- **Repository hygiene.** `backend/trades.json`, `agents.log`, `agent_state.json`, `price_history.json`, the `*.backup` copies and the raw JSON-RPC dumps are gitignored and must stay that way; CI fails if any is tracked. `.qoder/repowiki/` is excluded because it is generated output — regenerate it rather than editing it.
 - **Dependency notes.** `requirements.txt` is pinned to the versions the tests were run against, and lists no test dependencies (`pytest` is not used; Playwright is not listed). `zustand` is a declared frontend dependency and imported nowhere.
 - **The demo is bookkeeping, not a simulator.** Simulated fills execute instantly at the proposal price with no slippage, fees, gas or partial fills, so demo P&L is optimistic by construction. It also shares the pricing-source caveat above.
-- **Docs drift.** `.qoder/repowiki/` contains a generated English wiki for this repo (architecture, API reference, token ecosystem). Useful for orientation, but generated at some earlier point; where it disagrees with the code, the code is right.
+- **Generated documentation.** `.qoder/repowiki/` holds an English wiki generated from this code — architecture, API reference, token ecosystem, testing strategy — regenerated against this release. It is derived output and not maintained by hand: where it disagrees with the code, the code is right, and the fix belongs in the generator's inputs, not in the wiki.
 
 ## Not covered here
 
 - **Licence.** GPL-3.0-only; see `LICENSE`.
-- **Deployment.** No Dockerfile or production notes yet. `npm run build` is exercised in CI; `next start` and a hosted deployment are not.
+- **Deployment.** `docker-compose.yml` plus the two `Dockerfile`s build the backend and the Next.js frontend; `deploy/` holds the Caddy snippet for `dextrader.caldefoc.com`, which strips `/api` and proxies to the backend. The live demo runs from a `git clone` of this repository with `/srv/dextrader/.env` holding the API keys — nothing secret is in the tree or its history. `npm run build` is also exercised in CI.
 - **Minimum versions.** Python 3.12+ (CI uses 3.12; developed on 3.14). Node 20+ (CI uses 20; developed on 24).
 - **Upstream API behaviour.** CMC's keyless `trial-pro-api` path and CoinGecko's anonymous limits were not re-verified; the code's own comments record earlier failures (CMC `quotes/latest` 403 on the trial path, CoinGecko rejecting underscore headers). Expect upstream shape changes to surface as a token silently missing from the list rather than an error.
 

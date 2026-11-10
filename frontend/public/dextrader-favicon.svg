@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="DexTrader">
+  <title>DexTrader</title>
+  <defs>
+    <linearGradient id="dx" gradientUnits="userSpaceOnUse" x1="13" y1="13" x2="51" y2="52">
+      <stop offset="0" stop-color="#22C55E"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14.08" fill="#020617"/>
+
+  <!-- three ascending candlesticks (wick + body), one shared gradient -->
+  <g stroke="url(#dx)" fill="url(#dx)" stroke-linecap="round">
+    <line x1="17.5" y1="31.5" x2="17.5" y2="52.5" stroke-width="2.5"/>
+    <rect x="13" y="36.5" width="9" height="11.5" rx="1.5" stroke="none"/>
+
+    <line x1="32" y1="22.5" x2="32" y2="47.5" stroke-width="2.5"/>
+    <rect x="27.5" y="27.5" width="9" height="14.5" rx="1.5" stroke="none"/>
+
+    <line x1="46.5" y1="13.5" x2="46.5" y2="41.5" stroke-width="2.5"/>
+    <rect x="42" y="18.5" width="9" height="17" rx="1.5" stroke="none"/>
+  </g>
+</svg>
